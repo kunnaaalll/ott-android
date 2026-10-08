@@ -1,0 +1,104 @@
+package com.ott.platform.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.ott.platform.ui.theme.OttGradientEnd
+import com.ott.platform.ui.theme.OttGradientStart
+import com.ott.platform.ui.theme.OttSurfaceVariant
+import com.ott.platform.ui.theme.OttTextPrimary
+
+/**
+ * Content poster card used in horizontal rows and grids.
+ * Displays poster image with title overlay at the bottom.
+ */
+@Composable
+fun ContentCard(
+    title: String,
+    posterUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp = 120.dp,
+    aspectRatio: Float = 0.7f, // Poster ratio (2:3 approx)
+    showTitle: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .width(width)
+            .aspectRatio(aspectRatio)
+            .clip(RoundedCornerShape(8.dp))
+            .background(OttSurfaceVariant)
+            .clickable(onClick = onClick),
+    ) {
+        // Poster image
+        AsyncImage(
+            model = posterUrl,
+            contentDescription = title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+
+        // Title gradient overlay
+        if (showTitle) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(OttGradientEnd, OttGradientStart),
+                        )
+                    )
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = OttTextPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Wide content card for "Continue Watching" or featured rows.
+ */
+@Composable
+fun ContentCardWide(
+    title: String,
+    backdropUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp = 200.dp,
+) {
+    ContentCard(
+        title = title,
+        posterUrl = backdropUrl,
+        onClick = onClick,
+        modifier = modifier,
+        width = width,
+        aspectRatio = 16f / 9f,
+        showTitle = true,
+    )
+}
