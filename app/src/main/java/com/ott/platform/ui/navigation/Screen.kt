@@ -8,6 +8,7 @@ sealed class Screen(val route: String) {
     object Splash : Screen("splash")
     object Login : Screen("login")
     object Register : Screen("register")
+    object SubscriptionCheck : Screen("subscription_check")
     object Subscription : Screen("subscription")
     
     // Main App (Bottom Nav)

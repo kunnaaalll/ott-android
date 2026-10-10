@@ -13,15 +13,24 @@ import com.ott.platform.ui.components.EmptyListState
 import com.ott.platform.ui.components.SkeletonGrid
 import com.ott.platform.ui.theme.LocalSpacing
 import com.ott.platform.ui.theme.OttBackground
-import com.ott.platform.ui.theme.OttRed
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun MyListScreen(
-    onNavigateToContent: (String) -> Unit
+    onNavigateToContent: (String) -> Unit,
+    viewModel: MyListViewModel = hiltViewModel()
 ) {
     val spacing = LocalSpacing.current
+    val uiState by viewModel.uiState.collectAsState()
     
-    // Placeholder empty list state
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -35,10 +44,31 @@ fun MyListScreen(
             fontWeight = FontWeight.Bold,
         )
         
-        // When empty:
-        EmptyListState()
+        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(spacing.md))
         
-        // When loading:
-        // SkeletonGrid()
+        if (uiState.isLoading) {
+            SkeletonGrid()
+        } else if (uiState.items.isEmpty()) {
+            EmptyListState()
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(110.dp),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(
+                    items = uiState.items,
+                    key = { it.id }
+                ) { content ->
+                    com.ott.platform.ui.components.ContentCard(
+                        title = content.title,
+                        posterUrl = content.posterUrl.takeIf { it.isNotBlank() } ?: content.backdropUrl,
+                        onClick = { onNavigateToContent(content.id) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
     }
 }

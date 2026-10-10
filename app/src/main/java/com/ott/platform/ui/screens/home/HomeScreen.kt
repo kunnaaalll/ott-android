@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,21 +20,42 @@ import com.ott.platform.ui.theme.LocalSpacing
 import com.ott.platform.ui.theme.OttBackground
 import com.ott.platform.ui.theme.OttTextPrimary
 
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
+import com.ott.platform.ui.components.player.HeroTrailerPlayer
+
 @Composable
 fun HomeScreen(
     onNavigateToContent: (String) -> Unit,
+    heroTrailerController: HeroTrailerController = hiltViewModel(),
+    viewModel: HomeViewModel = hiltViewModel()
 ) {
     val spacing = LocalSpacing.current
     
-    // Placeholder loading state
-    val isLoading = false
+    val playbackUrl by heroTrailerController.playbackUrl.collectAsState()
+    val cookies by heroTrailerController.cookies.collectAsState()
+    val isMuted by heroTrailerController.isMuted.collectAsState()
     
-    if (isLoading) {
+    val uiState by viewModel.uiState.collectAsState()
+    
+    if (uiState.isLoading) {
         SkeletonHomeScreen(modifier = Modifier.fillMaxSize().background(OttBackground))
         return
     }
 
+    val listState = rememberLazyListState()
+    val isHeroVisible by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0
+        }
+    }
+
+    val heroContent = uiState.featured.firstOrNull()
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .background(OttBackground),
@@ -45,41 +68,84 @@ fun HomeScreen(
                     .height(spacing.heroHeight)
                     .background(com.ott.platform.ui.theme.OttSurfaceVariant)
             ) {
-                // Placeholder for hero trailer/poster
+                if (heroContent != null) {
+                    val heroContentId = heroContent.id
+                    
+                    DisposableEffect(heroContentId) {
+                        onDispose {
+                            heroTrailerController.onHeroInactive(heroContentId)
+                        }
+                    }
+                    
+                    LaunchedEffect(isHeroVisible, heroContentId) {
+                        if (isHeroVisible) {
+                            heroTrailerController.onHeroActive(heroContentId)
+                        } else {
+                            heroTrailerController.onHeroInactive(heroContentId)
+                        }
+                    }
+
+                    HeroTrailerPlayer(
+                        playbackUrl = playbackUrl,
+                        cookies = cookies,
+                        isMuted = isMuted,
+                        onToggleMute = heroTrailerController::toggleMute,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
         
-        // Continue Watching Row
-        item {
-            Spacer(modifier = Modifier.height(spacing.sectionGap))
-            ContentRow(
-                title = "Continue Watching",
-                items = listOf("1", "2", "3"),
-                isWide = true,
-                onItemClick = onNavigateToContent
-            )
+        // Continue Watching Row - if implemented later
+        if (uiState.continueWatching.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Continue Watching",
+                    items = uiState.continueWatching,
+                    isWide = true,
+                    onItemClick = onNavigateToContent
+                )
+            }
         }
         
         // New Releases Row
-        item {
-            Spacer(modifier = Modifier.height(spacing.sectionGap))
-            ContentRow(
-                title = "New Releases",
-                items = listOf("4", "5", "6", "7", "8"),
-                isWide = false,
-                onItemClick = onNavigateToContent
-            )
+        if (uiState.newReleases.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "New Releases",
+                    items = uiState.newReleases,
+                    isWide = false,
+                    onItemClick = onNavigateToContent
+                )
+            }
         }
         
         // Trending Row
-        item {
-            Spacer(modifier = Modifier.height(spacing.sectionGap))
-            ContentRow(
-                title = "Trending Now",
-                items = listOf("9", "10", "11", "12", "13"),
-                isWide = false,
-                onItemClick = onNavigateToContent
-            )
+        if (uiState.trending.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Trending Now",
+                    items = uiState.trending,
+                    isWide = false,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // Popular Row
+        if (uiState.popular.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Popular on OTT",
+                    items = uiState.popular,
+                    isWide = false,
+                    onItemClick = onNavigateToContent
+                )
+            }
         }
         
         item {
@@ -91,7 +157,7 @@ fun HomeScreen(
 @Composable
 private fun ContentRow(
     title: String,
-    items: List<String>,
+    items: List<com.ott.platform.data.model.Content>,
     isWide: Boolean,
     onItemClick: (String) -> Unit,
 ) {
@@ -112,18 +178,18 @@ private fun ContentRow(
             contentPadding = PaddingValues(horizontal = spacing.screenPadding),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm)
         ) {
-            items(items) { id ->
+            items(items, key = { it.id }) { content ->
                 if (isWide) {
                     ContentCardWide(
-                        title = "Content $id",
-                        backdropUrl = null,
-                        onClick = { onItemClick(id) }
+                        title = content.title,
+                        backdropUrl = content.backdropUrl.takeIf { it.isNotBlank() } ?: content.posterUrl,
+                        onClick = { onItemClick(content.id) }
                     )
                 } else {
                     ContentCard(
-                        title = "Content $id",
-                        posterUrl = null,
-                        onClick = { onItemClick(id) }
+                        title = content.title,
+                        posterUrl = content.posterUrl.takeIf { it.isNotBlank() } ?: content.backdropUrl,
+                        onClick = { onItemClick(content.id) }
                     )
                 }
             }

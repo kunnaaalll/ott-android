@@ -20,15 +20,53 @@ import com.ott.platform.ui.theme.OttBackground
 import com.ott.platform.ui.theme.OttRed
 import com.ott.platform.ui.theme.OttTextSecondary
 
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ott.platform.ui.screens.auth.AuthViewModel
+import com.ott.platform.ui.screens.auth.AuthState
+
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
+    viewModel: AuthViewModel = hiltViewModel()
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = LocalContext.current.let { LocalSpacing.current }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
+    val authState by viewModel.authState.collectAsState()
+    val isLoading = authState is AuthState.Loading
+    
+    val context = LocalContext.current
+    
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                account.idToken?.let { idToken ->
+                    viewModel.signInWithGoogle(idToken)
+                }
+            } catch (e: ApiException) {
+                // Handle exception
+            }
+        }
+    }
+
+    LaunchedEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            onLoginSuccess()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -66,14 +104,22 @@ fun LoginScreen(
         
         Spacer(modifier = Modifier.height(spacing.xl))
         
+        if (authState is AuthState.Error) {
+            Text(
+                text = (authState as AuthState.Error).message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = spacing.md)
+            )
+        }
+
         OttButton(
             text = "Sign In",
             onClick = {
-                // Placeholder logic
-                isLoading = true
-                onLoginSuccess()
+                viewModel.signIn(email, password)
             },
             isLoading = isLoading,
+            enabled = email.isNotBlank() && password.isNotBlank() && !isLoading
         )
         
         Spacer(modifier = Modifier.height(spacing.lg))
@@ -86,10 +132,17 @@ fun LoginScreen(
         
         Spacer(modifier = Modifier.height(spacing.lg))
         
-        // Placeholder for Google Sign In
         OttButton(
             text = "Sign in with Google",
-            onClick = { /* TODO */ },
+            onClick = {
+                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestIdToken(context.getString(com.ott.platform.R.string.default_web_client_id))
+                    .requestEmail()
+                    .build()
+                val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+            },
+            enabled = !isLoading
         )
         
         Spacer(modifier = Modifier.weight(1f))

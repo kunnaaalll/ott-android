@@ -98,4 +98,73 @@ class ContentRepositoryImpl @Inject constructor(
             .await()
         return snapshot.toObjects(Content::class.java)
     }
+
+    override suspend fun getTrendingContent(tenantId: String, limit: Int): List<Content> {
+        // MVP: Order by updatedAt or title for variation
+        val snapshot = contentCollection
+            .whereEqualTo("tenantId", tenantId)
+            .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+            .limit(limit.toLong())
+            .get()
+            .await()
+        return snapshot.toObjects(Content::class.java)
+    }
+
+    override suspend fun getPopularContent(tenantId: String, limit: Int): List<Content> {
+        // MVP: Another variation
+        val snapshot = contentCollection
+            .whereEqualTo("tenantId", tenantId)
+            .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+            .orderBy("title", Query.Direction.ASCENDING)
+            .limit(limit.toLong())
+            .get()
+            .await()
+        return snapshot.toObjects(Content::class.java)
+    }
+
+    // ── Admin Operations ──────────────────────────────────────────
+
+    override fun observeAllContentAdmin(tenantId: String): Flow<List<Content>> = callbackFlow {
+        val listener = contentCollection
+            .whereEqualTo("tenantId", tenantId)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                val content = snapshot?.toObjects(Content::class.java) ?: emptyList()
+                trySend(content)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    override suspend fun searchAllContentAdmin(tenantId: String, query: String): List<Content> {
+        val snapshot = contentCollection
+            .whereEqualTo("tenantId", tenantId)
+            .get()
+            .await()
+
+        val allContent = snapshot.toObjects(Content::class.java)
+        val lowerQuery = query.lowercase()
+        return allContent.filter {
+            it.title.lowercase().contains(lowerQuery) ||
+                it.description.lowercase().contains(lowerQuery)
+        }
+    }
+
+    override suspend fun saveContent(content: Content) {
+        val docRef = if (content.id.isEmpty()) contentCollection.document() else contentCollection.document(content.id)
+        docRef.set(content).await()
+    }
+
+    override suspend fun updateContentStatus(contentId: String, status: String) {
+        val functions = com.google.firebase.functions.FirebaseFunctions.getInstance()
+        val data = hashMapOf(
+            "contentId" to contentId,
+            "status" to status
+        )
+        functions.getHttpsCallable("changeContentStatus").call(data).await()
+    }
 }

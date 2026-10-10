@@ -1,0 +1,70 @@
+# ── Android ──────────────────────────────────────────────────────────────────
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# google-services.json contains project config but NOT service account keys.
+# It is typically committed for non-secret project identifiers.
+# If it contains sensitive identifiers for your deployment, add it here.
+# google-services.json
+
+# ── Firebase Functions ────────────────────────────────────────────────────────
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.*
+
+# ── Secrets — NEVER commit these ─────────────────────────────────────────────
+# CloudFront private signing key
+*.pem
+*.key
+cloudfront-private-key*
+cloudfront_private_key*
+
+# AWS credentials
+.aws/credentials
+.aws/config
+aws-credentials*
+
+# Firebase service account keys
+*-firebase-adminsdk-*.json
+firebase-service-account*.json
+serviceAccountKey.json
+
+# Payment gateway secrets
+gateway-webhook-secret*
+payment-secret*
+
+# Generic secret files
+*.secret
+*.secrets
+.env
+.env.*
+!.env.example
+
+# ── Terraform (if used in future) ─────────────────────────────────────────────
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+# Note: terraform.tfvars often contains sensitive values; do not commit
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

@@ -42,7 +42,8 @@ sealed class BottomNavItem(
 
 @Composable
 fun MainScreen(
-    onNavigateToContent: (String) -> Unit
+    onNavigateToContent: (String) -> Unit,
+    onSignOut: () -> Unit
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -110,7 +111,7 @@ fun MainScreen(
             }
             composable(Screen.Profile.route) {
                 ProfileScreen(
-                    onSignOut = { /* TODO */ },
+                    onSignOut = onSignOut,
                     onNavigateToSubscription = { /* TODO */ }
                 )
             }

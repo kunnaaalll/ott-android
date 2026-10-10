@@ -19,21 +19,49 @@ import com.ott.platform.ui.theme.OttBackground
 import com.ott.platform.ui.theme.OttTextPrimary
 import com.ott.platform.ui.theme.OttTextSecondary
 
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ott.platform.ui.screens.content.PlaybackViewModel
+import com.ott.platform.ui.screens.content.PlaybackState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.compose.BackHandler
+import com.ott.platform.ui.components.player.OttVideoPlayer
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContentDetailScreen(
     contentId: String?,
     onNavigateBack: () -> Unit,
-    onNavigateToPlayer: (String) -> Unit
+    onNavigateToPlayer: (String) -> Unit, // Unused as we have inline player, but kept for signature
+    onNavigateToContent: (String) -> Unit,
+    playbackViewModel: PlaybackViewModel = hiltViewModel(),
+    detailViewModel: ContentDetailViewModel = hiltViewModel()
 ) {
     val spacing = LocalSpacing.current
-    
-    val isLoading = false // Placeholder
-    
-    if (isLoading) {
-        SkeletonHero(modifier = Modifier.fillMaxSize().background(OttBackground))
-        return
+    val playbackState by playbackViewModel.playbackState.collectAsState()
+    val playbackUrl by playbackViewModel.playbackUrl.collectAsState()
+    val cookies by playbackViewModel.cookies.collectAsState()
+    var isFullscreen by remember { mutableStateOf(false) }
+
+    val uiState by detailViewModel.uiState.collectAsState()
+
+    LaunchedEffect(contentId) {
+        if (contentId != null) {
+            playbackViewModel.authorizeAndPlay(contentId)
+            detailViewModel.loadContent(contentId)
+        }
     }
+    
+    BackHandler(enabled = isFullscreen) {
+        isFullscreen = false
+    }
+
+    val isLoading = false // Placeholder
 
     Scaffold(
         topBar = {
@@ -60,53 +88,108 @@ fun ContentDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Hero Backdrop placeholder
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(spacing.heroHeight / 1.5f)
-                    .background(com.ott.platform.ui.theme.OttSurfaceVariant)
-            )
+            if (isFullscreen) {
+                OttVideoPlayer(
+                    playbackState = playbackState,
+                    playbackUrl = playbackUrl,
+                    cookies = cookies,
+                    onStateChanged = playbackViewModel::updateState,
+                    onRetry = playbackViewModel::retry,
+                    onGoToSubscription = { /* Navigate to sub */ },
+                    isFullscreen = true,
+                    onFullscreenToggle = { isFullscreen = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(spacing.heroHeight / 1.5f)
+                        .background(com.ott.platform.ui.theme.OttSurfaceVariant)
+                ) {
+                    OttVideoPlayer(
+                        playbackState = playbackState,
+                        playbackUrl = playbackUrl,
+                        cookies = cookies,
+                        onStateChanged = playbackViewModel::updateState,
+                        onRetry = playbackViewModel::retry,
+                        onGoToSubscription = { /* Navigate to sub */ },
+                        isFullscreen = false,
+                        onFullscreenToggle = { isFullscreen = true },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
             
-            Column(
-                modifier = Modifier.padding(spacing.screenPadding)
-            ) {
-                Text(
-                    text = "Content Title $contentId",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = OttTextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-                
-                Spacer(modifier = Modifier.height(spacing.xs))
-                
-                Text(
-                    text = "2026 • 2h 15m • Action, Sci-Fi",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OttTextSecondary
-                )
-                
-                Spacer(modifier = Modifier.height(spacing.lg))
-                
-                OttButton(
-                    text = "Play",
-                    onClick = { contentId?.let { onNavigateToPlayer(it) } }
-                )
-                
-                Spacer(modifier = Modifier.height(spacing.sm))
-                
-                OttOutlinedButton(
-                    text = "+ My List",
-                    onClick = { /* TODO */ }
-                )
-                
-                Spacer(modifier = Modifier.height(spacing.lg))
-                
-                Text(
-                    text = "This is a detailed description of the content. It gives the user context about what they are about to watch. It should be compelling and concise.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = OttTextPrimary
-                )
+            if (!isFullscreen) {
+                Column(
+                    modifier = Modifier.padding(spacing.screenPadding)
+                ) {
+                    val content = uiState.content
+                    if (content != null) {
+                        Text(
+                            text = content.title,
+                            style = MaterialTheme.typography.displaySmall,
+                            color = OttTextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        Spacer(modifier = Modifier.height(spacing.xs))
+                        
+                        // Extract year from timestamp if present, otherwise just show other metadata
+                        val year = content.releaseDate?.toDate()?.let {
+                            java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault()).format(it)
+                        } ?: ""
+                        
+                        val metaString = listOf(year, content.formattedDuration(), content.language)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" • ")
+                        
+                        Text(
+                            text = metaString,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OttTextSecondary
+                        )
+                        
+                        Spacer(modifier = Modifier.height(spacing.lg))
+                        
+                        OttOutlinedButton(
+                            text = if (uiState.isInMyList) "✓ In My List" else "+ My List",
+                            onClick = { detailViewModel.toggleMyList(content.id) }
+                        )
+                        
+                        Spacer(modifier = Modifier.height(spacing.lg))
+                        
+                        Text(
+                            text = content.description,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = OttTextPrimary
+                        )
+                    }
+
+                    if (uiState.relatedContent.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(spacing.xl))
+                        Text(
+                            text = "More Like This",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OttTextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(spacing.md))
+                        
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.sm)
+                        ) {
+                            androidx.compose.foundation.lazy.items(uiState.relatedContent, key = { it.id }) { related ->
+                                com.ott.platform.ui.components.ContentCard(
+                                    title = related.title,
+                                    posterUrl = related.posterUrl.takeIf { it.isNotBlank() } ?: related.backdropUrl,
+                                    onClick = { onNavigateToContent(related.id) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

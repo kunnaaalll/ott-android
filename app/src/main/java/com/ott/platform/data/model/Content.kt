@@ -29,11 +29,11 @@ data class Content(
     @PropertyName("backdropUrl")
     val backdropUrl: String = "",
 
-    @PropertyName("trailerUrl")
-    val trailerUrl: String = "",
+    @PropertyName("trailerPlaybackAsset")
+    val trailerPlaybackAsset: VideoAsset? = null,
 
-    @PropertyName("streamUrl")
-    val streamUrl: String = "",
+    @PropertyName("mainPlaybackAsset")
+    val mainPlaybackAsset: VideoAsset? = null,
 
     val duration: Long = 0L, // Duration in seconds
 
@@ -44,6 +44,8 @@ data class Content(
     val categoryIds: List<String> = emptyList(),
 
     val language: String = "",
+
+    val featured: Boolean = false,
 
     val status: String = ContentStatus.DRAFT.name,
 

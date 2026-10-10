@@ -1,5 +1,6 @@
 package com.ott.platform.core.crash
 
+import com.google.firebase.crashlytics.ktx.crashlytics
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,15 +12,17 @@ interface CrashReporter {
 
 @Singleton
 class FirebaseCrashReporter @Inject constructor() : CrashReporter {
+    private val crashlytics = com.google.firebase.ktx.Firebase.crashlytics
+
     override fun logException(throwable: Throwable) {
-        // Placeholder for Firebase.crashlytics.recordException
+        crashlytics.recordException(throwable)
     }
 
     override fun setUserId(userId: String) {
-        // Placeholder for Firebase.crashlytics.setUserId
+        crashlytics.setUserId(userId)
     }
 
     override fun setCustomKey(key: String, value: String) {
-        // Placeholder for Firebase.crashlytics.setCustomKey
+        crashlytics.setCustomKey(key, value)
     }
 }

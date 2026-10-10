@@ -26,4 +26,24 @@ interface ContentRepository {
 
     /** Get recently added content. */
     suspend fun getNewReleases(tenantId: String, limit: Int = 20): List<Content>
+    
+    /** Get trending content. */
+    suspend fun getTrendingContent(tenantId: String, limit: Int = 20): List<Content>
+    
+    /** Get popular content. */
+    suspend fun getPopularContent(tenantId: String, limit: Int = 20): List<Content>
+
+    // ── Admin Operations ──────────────────────────────────────────
+
+    /** Observe all content (including drafts and archived) for admin view. */
+    fun observeAllContentAdmin(tenantId: String): Flow<List<Content>>
+
+    /** Search all content (including drafts) by title. */
+    suspend fun searchAllContentAdmin(tenantId: String, query: String): List<Content>
+
+    /** Save (create or update) content. */
+    suspend fun saveContent(content: Content)
+
+    /** Change content status (e.g. Publish, Archive, Draft) */
+    suspend fun updateContentStatus(contentId: String, status: String)
 }

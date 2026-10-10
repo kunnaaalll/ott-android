@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default deny — explicit allow-list only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Helper Functions ──────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isCurrentUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admin status is read from the server-authoritative users document.
+    // The client cannot self-assign isAdmin == true (enforced in the users rules below).
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    function getUserTenant() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId;
+    }
+    
+    function isTenantAdmin(tenantId) {
+      return isAdmin() && getUserTenant() == tenantId;
+    }
+
+    // ── Users Collection ──────────────────────────────────────────────────────
+    match /users/{userId} {
+      // User can read their own profile only.
+      allow read: if isCurrentUser(userId);
+      
+      // User can create their own profile on first sign-in, but cannot set
+      // themselves as admin or assign themselves a tenantId.
+      // tenantId is assigned server-side after account creation.
+      allow create: if isCurrentUser(userId)
+                    && (!(\"isAdmin\" in request.resource.data) || request.resource.data.isAdmin == false)
+                    && !(\"tenantId\" in request.resource.data);
+
+      // User can update display/profile fields but cannot change protected fields.
+      allow update: if isCurrentUser(userId)
+                    && request.resource.data.tenantId == resource.data.tenantId
+                    && request.resource.data.isAdmin == resource.data.isAdmin;
+
+      allow delete: if false;
+
+      // User's My List — strictly scoped to the owning user.
+      match /myList/{contentId} {
+        allow read: if isCurrentUser(userId);
+        allow create, update: if isCurrentUser(userId);
+        allow delete: if isCurrentUser(userId);
+      }
+    }
+
+    // ── Subscriptions Collection ──────────────────────────────────────────────
+    // Written exclusively by Cloud Functions (Admin SDK bypasses these rules).
+    // Clients may only read their own subscription record.
+    match /subscriptions/{subscriptionId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // No client writes — all mutations go through Cloud Functions.
+      allow write: if false;
+    }
+
+    // ── Content Collection ────────────────────────────────────────────────────
+    match /content/{contentId} {
+      // Authenticated users may read PUBLISHED content metadata.
+      // The mainPlaybackAsset and trailerPlaybackAsset fields contain internal HLS
+      // paths that are resolved by Cloud Functions — they are not secret, but they
+      // are not directly useful to clients without a signed CloudFront cookie.
+      // Admins may also read DRAFT content for their own tenant.
+      allow read: if isSignedIn() && (
+        resource.data.status == "PUBLISHED" ||
+        isTenantAdmin(resource.data.tenantId)
+      );
+      
+      // Admins can create content for their own tenant.
+      allow create: if isSignedIn() && isTenantAdmin(request.resource.data.tenantId);
+      
+      // Admins can update their tenant's content fields.
+      // Server-authoritative fields cannot be changed from the client:
+      //   status              — changed only via changeContentStatus Cloud Function
+      //   mainPlaybackAsset   — set only via mediaConvertWebhook Cloud Function
+      //   trailerPlaybackAsset — set only via mediaConvertWebhook Cloud Function
+      //   posterUrl / backdropUrl — set only via completeMediaUpload Cloud Function
+      //   tenantId            — immutable after creation
+      allow update: if isSignedIn() 
+                    && isTenantAdmin(resource.data.tenantId) 
+                    && request.resource.data.tenantId == resource.data.tenantId
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['status', 'mainPlaybackAsset', 'trailerPlaybackAsset', 'posterUrl', 'backdropUrl']);
+
+      // Admins can delete their tenant's content.
+      allow delete: if isSignedIn() && isTenantAdmin(resource.data.tenantId);
+    }
+
+    // ── Media Uploads Collection ──────────────────────────────────────────────
+    // Entirely server-authoritative. Cloud Functions write these via Admin SDK.
+    // Admins may read upload records for their own tenant to check progress.
+    match /mediaUploads/{uploadId} {
+      allow read: if isSignedIn() && isTenantAdmin(resource.data.tenantId);
+      // No client writes — all mutations go through Cloud Functions.
+      allow write: if false;
+    }
+
+    // ── Webhook Events Collection ─────────────────────────────────────────────
+    // Idempotency log written by Cloud Functions only.
+    // No client access.
+    match /webhook_events/{eventId} {
+      allow read, write: if false;
+    }
+
+    // ── Rate Limits Collection ────────────────────────────────────────────────
+    // Written by Cloud Functions (Admin SDK) for per-user rate limiting.
+    // No client access.
+    match /_rateLimits/{docId} {
+      allow read, write: if false;
+    }
+
+    // ── Categories Collection ─────────────────────────────────────────────────
+    match /categories/{categoryId} {
+      // Authenticated users can read active categories.
+      allow read: if isSignedIn() && (resource.data.active == true || isTenantAdmin(resource.data.tenantId));
+      
+      allow create: if isSignedIn() && isTenantAdmin(request.resource.data.tenantId);
+      
+      allow update: if isSignedIn() 
+                    && isTenantAdmin(resource.data.tenantId) 
+                    && request.resource.data.tenantId == resource.data.tenantId;
+
+      allow delete: if isSignedIn() && isTenantAdmin(resource.data.tenantId);
+    }
+
+    // ── Plans Collection ──────────────────────────────────────────────────────
+    match /plans/{planId} {
+      // Authenticated users can read active plans.
+      allow read: if isSignedIn() && (resource.data.active == true || isTenantAdmin(resource.data.tenantId));
+      
+      allow create: if isSignedIn() && isTenantAdmin(request.resource.data.tenantId);
+      
+      allow update: if isSignedIn() 
+                    && isTenantAdmin(resource.data.tenantId) 
+                    && request.resource.data.tenantId == resource.data.tenantId;
+
+      allow delete: if isSignedIn() && isTenantAdmin(resource.data.tenantId);
+    }
+  }
+}

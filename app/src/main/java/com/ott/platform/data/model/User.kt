@@ -24,6 +24,9 @@ data class User(
     @PropertyName("photoUrl")
     val photoUrl: String = "",
 
+    @PropertyName("isAdmin")
+    val isAdmin: Boolean = false,
+
     @ServerTimestamp
     @PropertyName("createdAt")
     val createdAt: Timestamp? = null,

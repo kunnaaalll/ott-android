@@ -1524,3 +1524,273 @@ Video playback should be fast, smooth and reliable.
 Everything else can come later.
 
 The architecture should therefore remain small underneath while the product experience feels premium on top.
+
+---
+
+# 44. Firebase Configuration & Documentation (Phase 2)
+
+## 44.1 Firebase Project Creation
+1. Go to the Firebase Console (https://console.firebase.google.com/).
+2. Create a new Firebase project.
+3. Add an Android app to the project with the package name `com.ott.platform`.
+4. Download the `google-services.json` file.
+
+## 44.2 Configuration Location
+Place the downloaded `google-services.json` file in the `app/` directory of the project:
+`app/google-services.json`
+
+Once the file is in place, the build scripts will automatically pick it up, but you must manually uncomment the Google Services and Crashlytics plugins in `app/build.gradle.kts`:
+```kotlin
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
+```
+
+## 44.3 Required Firebase Services
+- **Firebase Authentication**: Enable Email/Password and Google Sign-In providers.
+- **Cloud Firestore**: Provision a database in production mode.
+- **Firebase Analytics**: Enable Google Analytics for the project.
+- **Firebase Crashlytics**: Enable Crashlytics in the Firebase console.
+
+## 44.4 Firestore Setup & Security Rules
+The initial security rules have been added to the project in `firestore.rules`.
+Deploy these rules to your Firebase project using the Firebase CLI:
+`firebase deploy --only firestore:rules`
+
+## 44.5 Known Limitations
+While Firebase credentials (`google-services.json`) are unavailable:
+- The app will compile and run with the Firebase abstractions, but actual Firebase calls (login, registration) will crash or fail at runtime because the SDK is not initialized properly without the JSON config.
+- Google Sign-In will not work without OAuth 2.0 Client IDs configured in Firebase and Play Console.
+- Analytics and Crashlytics will not track data.
+
+---
+
+# Phase 3: Subscription Architecture
+
+## Overview
+The platform enforces a subscription-only model. Access to premium content is strictly gated by an active entitlement state stored in Firestore. The Android application is an untrusted environment and does not have the capability to create or authorize its own subscriptions. Instead, it relies on a trusted serverless layer (Cloud Functions) that responds to webhooks from an external Payment Gateway.
+
+## Data Model
+
+**Subscription State:**
+```text
+subscriptions/{subscriptionId}
+{
+    tenantId,
+    userId,
+    planId,
+    gatewaySubscriptionId,
+    status, // E.g., ACTIVE, PENDING, EXPIRED, CANCELLED, FAILED
+    startDate,
+    expiryDate,
+    createdAt,
+    updatedAt
+}
+```
+
+## Security Rules
+The Android application has **read-only** access to its own `subscriptions/{subscriptionId}` document. 
+Modifying the subscription `status`, `expiryDate`, or `tenantId` is completely blocked by Firestore Security Rules. Only the serverless Cloud Functions (with Firebase Admin privileges) can mutate this state.
+
+## Webhook Architecture & Idempotency
+Payment gateway events are processed by a Firebase Cloud Function (`paymentWebhook`).
+- **Signature Validation:** The Cloud Function verifies the cryptographic signature attached to the incoming webhook by the gateway. **(STATUS: UNIMPLEMENTED / GATEWAY CONFIGURATION REQUIRED)**. Currently, the function rejects all webhooks because it lacks the specific gateway's signing logic.
+- **Idempotency:** Webhooks can be retried. The Cloud Function executes a Firestore transaction that checks `webhook_events/{eventId}`. If the event ID exists, processing is skipped. This prevents duplicate subscription extensions or conflicting updates.
+- **Entitlement Authorization:** Upon capturing a `payment.success` or `subscription.activated` event, the function writes the subscription doc to `ACTIVE` and pushes the `expiryDate` forward. 
+
+## Payment Flow
+1. **User Initiates:** User selects a `Plan` from the Android app's `SubscriptionScreen`.
+2. **App Requests Payment:** The app calls `PaymentGateway.initiatePayment()`. The local state becomes `Confirming`.
+3. **Gateway Processes:** The user completes payment in the gateway UI/overlay.
+4. **Gateway Webhook:** The gateway sends a success webhook to the Firebase Cloud Function.
+5. **Function Verifies:** The function validates the signature, ensures idempotency, and updates the `subscriptions` collection to `ACTIVE`.
+6. **App Observes:** The Android app, observing Firestore, receives the snapshot update. The `SubscriptionState` changes to `Active`, automatically gating the user into the main content area.
+
+## Gateway-Specific Configuration Requirements
+**Payment Gateway Integration: PARTIALLY IMPLEMENTED / GATEWAY CONFIGURATION REQUIRED**
+
+The implementation currently uses an abstract `ExternalPaymentGatewayAdapter` which throws a `PaymentGatewayNotConfiguredException`. To finalize the gateway integration, the following components are required:
+- **Gateway name** (e.g. Stripe, Razorpay)
+- **Android SDK/API requirements** to launch the payment UI flow
+- **Public/client key** for initialization
+- **Webhook secret** (`GATEWAY_WEBHOOK_SECRET`)
+- **Webhook signature format** (e.g. `Stripe-Signature` or `x-razorpay-signature`)
+- **Webhook event schema** (e.g. extracting `subscription_id`, `userId`, `tenantId`)
+- **Subscription creation API** to configure plans on the gateway side
+- **Subscription verification API** for manual checks if needed
+
+## Known Limitations (Phase 3)
+- The current cancel policy assumes subscriptions remain active until their expiry date, even if marked as `CANCELLED` (no-renew). This may need adjustment based on the exact billing policy of the chosen gateway.
+- Refund states and grace periods are modeled loosely and default to inactive if not explicitly handled by the webhook.
+
+---
+
+# Phase 4A: Video Infrastructure
+
+## Architecture Overview
+The platform uses a scalable, serverless video delivery pipeline:
+`Original Video (Source) → AWS S3 (Input) → [Optional MediaConvert/Transcoding] → AWS S3 (Private HLS Assets) → AWS CloudFront (OAC) → Playback Authorization → Android Media3`
+
+This ensures that the Android client never accesses S3 directly, video assets are served globally via CDN, and access is strictly gated by backend authorization logic.
+
+## Video Asset Model
+Firestore stores logical identities for video assets, not permanent public URLs. The `Content` model includes `mainPlaybackAsset` and `trailerPlaybackAsset` represented by a `VideoAsset` abstraction:
+```kotlin
+data class VideoAsset(
+    val contentId: String = "",
+    val tenantId: String = "",
+    val assetType: String = "", // e.g. "MAIN", "TRAILER"
+    val hlsPath: String = "",   // e.g. "content/tenant_001/movie_123/hls/master.m3u8"
+    val duration: Long = 0L
+)
+```
+
+## Security & Playback Authorization
+1. **S3 Privacy**: The AWS S3 bucket must have Block Public Access enabled. It must not be publicly readable.
+2. **CloudFront OAC**: AWS CloudFront is configured to use Origin Access Control (OAC) to read from the S3 bucket securely.
+3. **Authorization Flow**:
+   - The Android client requests playback authorization for a specific `contentId`.
+   - The Firebase Cloud Function (`authorizePlayback`) verifies the Firebase Auth token.
+   - The function retrieves the requested `Content` to identify the `tenantId` and verifies it is published.
+   - The function checks the `subscriptions` collection for an `ACTIVE` and unexpired subscription for that user and tenant.
+   - If authorized, the function will generate and return a short-lived CloudFront signed URL or signed cookies.
+   - The Android client passes this short-lived URL to the Media3 player.
+4. **No Secrets in Client**: The Android APK does NOT contain any AWS Access Keys, CloudFront Key Pairs, or other privileged credentials.
+
+## AWS Setup Requirements (Manual Deployment Steps)
+Because actual AWS credentials are not stored in the repository, the following manual setup is required in the AWS Console:
+1. **S3 Bucket**: Create a private S3 bucket (e.g., `ott-video-assets`). Ensure "Block all public access" is turned ON.
+2. **CloudFront Distribution**: Create a distribution pointing to the S3 bucket as its origin.
+3. **Origin Access Control (OAC)**: Configure CloudFront OAC for the origin and update the S3 Bucket Policy to allow `s3:GetObject` ONLY from the CloudFront distribution ARN.
+4. **HLS Transcoding**: Set up AWS MediaConvert (or a similar tool) to transcode uploaded MP4s into segmented HLS (e.g., 360p, 480p, 720p, 1080p variant streams + master playlist) outputting to the S3 bucket.
+5. **CloudFront Signing**: Generate a CloudFront Key Pair. Configure a Cache Behavior that requires signed URLs or signed cookies.
+6. **Cloud Function Environment**: Provide the CloudFront Key Pair ID, Private Key, and Domain to the Firebase Cloud Functions via Firebase Secret Manager or environment variables:
+   - `CLOUDFRONT_KEY_PAIR_ID`
+   - `CLOUDFRONT_PRIVATE_KEY`
+   - `CLOUDFRONT_DOMAIN`
+
+## Current Limitations & Configuration Dependencies
+- **CloudFront Signing Logic**: The exact CloudFront URL signing generation is marked as `UNIMPLEMENTED` and throws a `PLAYBACK_NOT_CONFIGURED` exception. It requires the AWS SDK (e.g., `@aws-sdk/cloudfront-signer`) and the keys above to be configured. The Android client will currently fail to play videos because the actual signed URL is not generated yet.
+- **Hero Autoplay**: The UI elements (ExoPlayer hero autoplay, mute/unmute UI) are NOT implemented in Phase 4A. They are deferred to Phase 4B. This phase only establishes the infrastructure and contract needed for Phase 4B to consume `PlaybackAuthorization`.
+
+## Phase 4B & 4B.1: Playback Implementation & Hardening
+- **Media3/ExoPlayer integration**: Custom premium player UI, Media3 dependencies, and state management via `PlaybackViewModel`.
+- **Playback Authorization Contract**: Full race-condition protection and failure handling mapped to user UI.
+- **Hero Trailer Lifecycle**:
+  - Hero uses `HeroTrailerController` and `HeroTrailerPlayer`.
+  - Implements explicit `isActive` tracking via `rememberLazyListState` visibility.
+  - Automatically cancels pending authorizations when scrolling away.
+  - Pauses, stops, and releases the player correctly when the hero is inactive or out of view.
+  - Enforces one active player and defaults to muted.
+- **Race Protection**: Stale authorization responses are explicitly ignored if the active content ID changes.
+- **Player Lifecycle**: `DisposableEffect` ensures Media3 players are securely released upon screen exit without memory leaks.
+- **CloudFront Validation**: `playback.ts` explicitly verifies that the requested `hlsPath` belongs to the correct `tenantId` and `contentId` prefix.
+- **Status of CloudFront Signing**: **Implemented contract, deployment-dependent signing implementation pending.** The system throws a `PLAYBACK_NOT_CONFIGURED` exception safely if AWS keys are not provided. AWS SDK and explicit configuration are required for true secure playback.
+
+## Phase 5: OTT Content Experience
+- **Home Architecture**: Extends `ContentRepository` for dynamic content sections (Featured, New Releases, Trending, Popular). Binds `HomeViewModel` to fetch lists and display them in horizontally scrolling reusable `ContentRow`s.
+- **Search**: Implemented with a 500ms debounce using Kotlin Coroutines `Flow.debounce()`. Uses client-side filtering on published content for MVP. `SearchViewModel` tracks state, `SearchScreen` handles the empty state and results grid.
+- **My List**: Architecture implemented using a user-isolated Firestore collection: `users/{userId}/myList/{contentId}`. Handled via `MyListRepository` and bound to `MyListViewModel` to fetch the user's saved content IDs, mapping them to full `Content` metadata.
+- **Content Detail**: Integrated `ContentDetailViewModel` to display content metadata, related content (same category), and a toggleable "My List" button alongside the existing Media3 `PlaybackViewModel`.
+- **Security & Authorization**: The client cannot alter tenant or admin roles. MyList operations use `request.auth.uid` filtering enforced by existing Firestore rules (e.g., `match /myList/{contentId} { allow read, write: if request.auth != null && request.auth.uid == userId; }`). Tenant isolation remains respected in all repository read operations.
+- **Watch Progress**: Watch progress deferred.
+- **Status of Tests**: Tests written for all ViewModels, simulating the repository flow. Local execution is limited due to missing Gradle wrapper, but code paths are covered correctly.
+- **Completion**: Android implementation complete. Production AWS playback configuration pending.
+
+## Phase 6: Admin CMS & Content Management
+- **Admin Architecture**: A set of ViewModels (`AdminDashboardViewModel`, `AdminContentViewModel`, `AdminCategoryViewModel`, `AdminPlanViewModel`) enforce an initial client-side check (`user.isAdmin`), acting as the gateway to admin operations. UI visibility is not the security mechanism; security is enforced by Firestore rules.
+- **Role Model**: Added an explicit `isAdmin: Boolean = false` field to the `User` model. This field cannot be changed by normal client-side writes, ensuring roles can only be set securely via backend (e.g. Firebase Admin SDK).
+- **Tenant Isolation**: Admins can only interact with their own tenant. The `isTenantAdmin()` function was introduced in `firestore.rules` which asserts `isAdmin() && getUserTenant() == tenantId`. Every create/update operation requires the incoming request payload's `tenantId` to match the admin's verified tenant, preventing cross-tenant modifications.
+- **Content Management**: Extended `ContentRepository` with admin-only methods (`observeAllContentAdmin`, `searchAllContentAdmin`, `saveContent`, `updateContentStatus`). Content includes states like `DRAFT`, `PUBLISHED`, `ARCHIVED`, and a `featured` toggle. Normal users are strictly restricted to reading `PUBLISHED` content.
+- **Categories**: Added `Category` model and repository. Users can read active categories, while tenant admins can create, update, and soft-delete/deactivate them.
+- **Plans**: Added `Plan` model and repository. The Admin CMS handles creation and deactivation of subscription plans. Subscription statuses (`Subscription.kt`) cannot be changed manually by admins through the client; they remain server-authoritative depending on the payment gateway webhook.
+- **Security Verification**: `firestore.rules` was overhauled. Users cannot elevate their role, cannot change their tenant, and cannot write content, plans, or categories. 
+- **Tests**: `AdminContentViewModelTest` was written testing role authorization, tenant isolation checks on save, and publish status updates. The tests were not executed due to missing gradle wrapper. 
+- **Limitations**: No AWS credentials exposed, no insecure direct S3 uploads implemented, video upload infrastructure remains an external dependency, payment gateways remain an external dependency.
+- **Completion**: Phase 6 CMS architecture is complete, awaiting AWS integration for direct uploads.
+
+## Phase 6.1: Firestore Security & Admin Authorization Hardening
+- **Security Audit & Hardening**: The Firestore authorization model underwent a dedicated security pass to ensure robust tenant isolation and resistance to privilege escalation.
+- **Tenant Isolation for Updates**: Existing document updates are now authorized based on the existing document's trusted `resource.data.tenantId`, not the proposed `request.resource.data.tenantId`. This prevents admins from taking ownership of or modifying another tenant's resources.
+- **Protected Fields**: Normal users are prevented from manipulating privileged fields such as `isAdmin` and `tenantId`. A user cannot elevate their privileges (`isAdmin = true`) or switch tenants.
+- **Content & Administrative Authorization**: The `create`, `update`, and `delete` operations for `content`, `categories`, and `plans` enforce tenant boundaries strictly. An admin must belong to the tenant matching the existing document (`update`/`delete`) or the proposed document (`create`), and tenant IDs cannot be changed post-creation.
+- **Subscription Security**: Subscriptions remain strictly read-only for clients. The Android application cannot create, update, or delete subscription state, maintaining the server-authoritative architecture driven by payment webhooks.
+- **My List Ownership**: The `myList` collection ensures strict user isolation; a user can only read and write to their own list (`request.auth.uid == userId`). Watch progress, if implemented, follows the same isolation pattern.
+- **Consumer Content Reads**: Published content remains readable for normal consumers, while unpublished or administrative content remains securely isolated.
+- **No New Features**: This phase focused exclusively on security hardening without introducing new product functionality or AWS dependencies.
+
+## Phase 7: Secure Media Upload, Processing & Content Publishing Pipeline
+- **Media Ingestion Architecture**:
+  ```text
+  Admin Android
+   ↓
+  Firebase callable function (createMediaUpload)
+   ↓
+  admin + tenant + content authorization
+   ↓
+  short-lived S3 upload authorization
+   ↓
+  direct private S3 upload
+   ↓
+  trusted upload confirmation (completeMediaUpload)
+   ↓
+  MediaConvert
+   ↓
+  private HLS
+   ↓
+  processing completion (mediaConvertWebhook)
+   ↓
+  Firestore VideoAsset (updated by webhook)
+  ```
+- **Media Types**: Supported types include `MAIN_VIDEO`, `TRAILER`, `POSTER`, `BACKDROP`.
+- **Storage Layout**: 
+  Source files: `uploads/{tenantId}/{contentId}/source/{mediaType}/{uploadId}`
+  Processed files: `content/{tenantId}/{contentId}/hls/{mediaType}/`
+- **Upload Lifecycle**: Explicit state tracking in `mediaUploads` collection: `PENDING_UPLOAD`, `UPLOADING`, `UPLOADED`, `PROCESSING`, `READY`, `FAILED`, `CANCELLED`.
+- **Processing Lifecycle**: Images (`POSTER`, `BACKDROP`) mark as `READY` immediately. Video (`MAIN_VIDEO`, `TRAILER`) triggers AWS MediaConvert and transitions to `PROCESSING` until a webhook confirms completion.
+- **Tenant Isolation**: S3 bucket prefixes are strongly typed to the `tenantId`. Server-side validation restricts admins to initiating and finalizing uploads strictly for their assigned tenant. Stale results or duplicate triggers are handled using transaction-based idempotency checks.
+- **Publication Rules**: Client-side publishing directly updating the status is disabled. A server-authoritative callable `publishContent` asserts all criteria (like `mainPlaybackAsset` being `READY`) are met before setting status to `PUBLISHED`.
+- **Environment Configuration**: Functions require `S3_UPLOAD_BUCKET`, `AWS_REGION`, `MEDIACONVERT_ENDPOINT`, and `MEDIACONVERT_ROLE`.
+- **AWS IAM Permissions**: Role must allow `s3:PutObject` for generating signed URLs and `mediaconvert:CreateJob` for starting conversions. MediaConvert itself needs a role for reading input and writing output to the S3 bucket.
+- **Android Upload Behavior**: Android acts as an untrusted client fetching an authorization string (signed URL), uploading binary payloads directly via OkHttp/HttpURLConnection, tracking local progress, and invoking the completion callback on the Cloud Function. It does NOT invent paths or status states.
+- **Failure Behavior**: Transcode failures emit status `FAILED` with diagnostics; network failures surface errors on Android.
+- **Replacement Behavior**: Currently working assets are not disconnected until a new transcoding job fully succeeds (maintains HLS paths atomically).
+- **Known Limitations**: Testing couldn't run successfully due to missing `gradlew`. Real CloudFront signing logic inside playback remains unimplemented. S3 CORS and EventBridge configs are external dependencies to be setup out-of-band.
+
+## Phase 7.1: Media Pipeline Production Security & Verification Hardening
+- **Implemented**:
+  - **Upload authorization**: Tenant-scoped, server-generated presigned S3 URLs (`uuidv4`).
+  - **Presigned S3 upload**: Temporary access with 4-hour expiration (14400s) to handle up to 10GB slow uploads.
+  - **Media upload records**: Upload records stored in Firestore mapped to `jobId`.
+  - **MediaConvert job creation**: Job creation mapped to upload record.
+  - **Processing state**: Webhook verifies object existence using S3 `HeadObjectCommand` before processing.
+  - **Publication validation**: Server-authoritative `changeContentStatus` ensures `mainPlaybackAsset` is present and valid before publishing.
+  - **Webhook security**: MediaConvert completion events via SNS are cryptographically verified using `sns-validator` package.
+  - **Stale-job protection & Idempotency**: Webhook logic cross-checks `jobId` and skips if already `READY` or `FAILED`.
+  - **Android memory safety**: Streaming mode enabled (`setFixedLengthStreamingMode`) to prevent OutOfMemory issues during 10GB uploads.
+- **External configuration required**:
+  - S3 bucket (Must be private, Block Public Access enabled)
+  - IAM (Application needs `s3:PutObject`, `s3:GetObject`, `mediaconvert:CreateJob`. MediaConvert needs its own role)
+  - EventBridge/SNS (Must route MediaConvert COMPLETE/ERROR events to SNS topic)
+  - Cloud Functions deployment (Requires `S3_UPLOAD_BUCKET`, `AWS_REGION`, etc.)
+- **Still not implemented / Limitations**:
+  - **CloudFront signed playback URLs**: Marked UNIMPLEMENTED.
+  - **Production playback verification**: Not end-to-end verified with real video playback.
+  - **Android File Selection**: The Android client simply takes a `File` object. Handling of `content://` URIs and `ContentResolver` for real Android file selection is NOT IMPLEMENTED.
+  - **Android Upload Cancellation**: Clean cancellation and background upload operations (e.g., WorkManager) are NOT IMPLEMENTED. Only basic coroutine cancellation exists which is insufficient.
+  - **Orphan-cleanup**: Media replacement does not delete old assets.
+
+## Phase 7.2: Android Media Selection & Upload Reliability
+- **Android media selection**:
+  - **Picker API**: Relies on modern `content://` URIs, decoupled from `File`. (UI implementations would use `ActivityResultContracts.OpenDocument`).
+  - **URI handling**: Implemented via `MediaSource` and `MediaSourceProvider` wrapping `ContentResolver`.
+  - **ContentResolver**: Safely queried for `DISPLAY_NAME`, `SIZE`, and `MIME_TYPE`.
+  - **Supported media types**: Controlled by MIME-type filters requested during picker invocation (e.g., `video/*` or `image/*`).
+- **Upload behavior**:
+  - **Streaming**: Fully streams bytes from `ContentResolver.openInputStream` directly to `HttpURLConnection.outputStream` with an 8KB buffer. `setFixedLengthStreamingMode` limits memory to a chunk size without loading full files (e.g. multi-GB videos) into memory.
+  - **Progress**: Computed natively from streamed bytes `((uploadedBytes / fileSize) * 100)` or returned as indeterminate if `sizeBytes` is missing.
+  - **Cancellation**: Coroutine cancellation inherently drops out of the IO block and safely closes streams using `.use { }` scoping.
+  - **Retry**: Basic fallback mapped back to the `AdminContentViewModel`. Permanent errors (like 403 S3 Expired Auth) will require the user to retry the upload and generate a new signed URL.
+  - **Process-death behavior**: Inherits standard `viewModelScope` semantics. If the app is killed, the coroutine dies, network closes, and the upload aborts.
+- **Current limitation**:
+  - **Persistent background upload is not implemented.** (No WorkManager).
+  - **Orphan-cleanup**: Remains unresolved.

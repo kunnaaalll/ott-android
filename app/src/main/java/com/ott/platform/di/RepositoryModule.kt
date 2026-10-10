@@ -36,4 +36,29 @@ abstract class RepositoryModule {
     abstract fun bindAuthRepository(
         impl: AuthRepositoryImpl
     ): AuthRepository
+
+    @Binds
+    abstract fun bindPlaybackAuthorizationRepository(
+        impl: com.ott.platform.data.repository.impl.PlaybackAuthorizationRepositoryImpl
+    ): com.ott.platform.data.repository.PlaybackAuthorizationRepository
+
+    @Binds
+    abstract fun bindMyListRepository(
+        impl: com.ott.platform.data.repository.impl.MyListRepositoryImpl
+    ): com.ott.platform.data.repository.MyListRepository
+
+    @Binds
+    abstract fun bindCategoryRepository(
+        impl: com.ott.platform.data.repository.impl.CategoryRepositoryImpl
+    ): com.ott.platform.data.repository.CategoryRepository
+
+    @Binds
+    abstract fun bindPlanRepository(
+        impl: com.ott.platform.data.repository.impl.PlanRepositoryImpl
+    ): com.ott.platform.data.repository.PlanRepository
+
+    @Binds
+    abstract fun bindMediaUploadRepository(
+        impl: com.ott.platform.data.repository.impl.MediaUploadRepositoryImpl
+    ): com.ott.platform.data.repository.MediaUploadRepository
 }

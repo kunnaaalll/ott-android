@@ -1,5 +1,6 @@
 package com.ott.platform.core.analytics
 
+import com.google.firebase.analytics.ktx.analytics
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,11 +11,22 @@ interface AnalyticsTracker {
 
 @Singleton
 class FirebaseAnalyticsTracker @Inject constructor() : AnalyticsTracker {
+    private val analytics = com.google.firebase.ktx.Firebase.analytics
+
     override fun logEvent(name: String, params: Map<String, Any>?) {
-        // Placeholder for Firebase.analytics.logEvent
+        val bundle = android.os.Bundle()
+        params?.forEach { (key, value) ->
+            when (value) {
+                is String -> bundle.putString(key, value)
+                is Int -> bundle.putInt(key, value)
+                is Boolean -> bundle.putBoolean(key, value)
+                is Double -> bundle.putDouble(key, value)
+            }
+        }
+        analytics.logEvent(name, bundle)
     }
 
     override fun setUserId(userId: String) {
-        // Placeholder for Firebase.analytics.setUserId
+        analytics.setUserId(userId)
     }
 }
