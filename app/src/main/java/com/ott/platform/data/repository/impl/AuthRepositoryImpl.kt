@@ -57,4 +57,6 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun signOut() {
         auth.signOut()
     }
+    
+    override fun getCurrentUserId(): String? = auth.currentUser?.uid
 }

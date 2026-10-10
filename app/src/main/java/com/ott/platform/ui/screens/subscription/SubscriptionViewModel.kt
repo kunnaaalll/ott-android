@@ -8,7 +8,9 @@ import com.ott.platform.data.model.Subscription
 import com.ott.platform.data.model.SubscriptionStatus
 import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.SubscriptionRepository
+import com.ott.platform.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +35,7 @@ sealed class SubscriptionState {
 class SubscriptionViewModel @Inject constructor(
     private val subscriptionRepository: SubscriptionRepository,
     private val authRepository: AuthRepository,
+    private val userRepository: UserRepository,
     private val paymentGateway: PaymentGateway
 ) : ViewModel() {
 
@@ -52,9 +55,14 @@ class SubscriptionViewModel @Inject constructor(
 
     private fun loadSubscription() {
         viewModelScope.launch {
-            val user = authRepository.getCurrentUser()
-            if (user == null) {
+            val firebaseUser = authRepository.currentUser.firstOrNull()
+            if (firebaseUser == null) {
                 _subscriptionState.value = SubscriptionState.Error("User not authenticated")
+                return@launch
+            }
+            val user = userRepository.observeUser(firebaseUser.uid).firstOrNull()
+            if (user == null) {
+                _subscriptionState.value = SubscriptionState.Error("User profile not found")
                 return@launch
             }
 
@@ -97,7 +105,8 @@ class SubscriptionViewModel @Inject constructor(
     private fun loadPlans() {
         viewModelScope.launch {
             try {
-                val user = authRepository.getCurrentUser() ?: return@launch
+                val firebaseUser = authRepository.currentUser.firstOrNull() ?: return@launch
+                val user = userRepository.observeUser(firebaseUser.uid).firstOrNull() ?: return@launch
                 _plans.value = subscriptionRepository.getPlans(user.tenantId)
             } catch (e: Exception) {
                 // Ignore or handle
@@ -107,11 +116,12 @@ class SubscriptionViewModel @Inject constructor(
 
     fun initiatePayment(plan: Plan) {
         if (_isPaymentProcessing.value) return
+        _isPaymentProcessing.value = true
         
         viewModelScope.launch {
-            _isPaymentProcessing.value = true
             try {
-                val user = authRepository.getCurrentUser() ?: throw IllegalStateException("Not logged in")
+                val firebaseUser = authRepository.currentUser.firstOrNull() ?: throw IllegalStateException("Not logged in")
+                val user = userRepository.observeUser(firebaseUser.uid).firstOrNull() ?: throw IllegalStateException("User profile not found")
                 paymentGateway.initiatePayment(user, plan)
                 
                 // If payment returns successfully (e.g. user completed UI flow),

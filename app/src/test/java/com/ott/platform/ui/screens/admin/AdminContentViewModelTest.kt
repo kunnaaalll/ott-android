@@ -19,7 +19,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.mockk.every
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AdminContentViewModelTest {
@@ -31,8 +34,8 @@ class AdminContentViewModelTest {
     private lateinit var mediaUploadRepository: com.ott.platform.data.repository.MediaUploadRepository
     private lateinit var viewModel: AdminContentViewModel
 
-    private val mockFirebaseUser = mock(FirebaseUser::class.java).apply {
-        `when`(uid).thenReturn("admin_uid")
+    private val mockFirebaseUser = mockk<FirebaseUser>(relaxed = true) {
+        every { uid } returns "admin_uid"
     }
     
     private val adminUser = User(id = "admin_uid", tenantId = "tenant_1", isAdmin = true)
@@ -41,10 +44,10 @@ class AdminContentViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
-        authRepository = mock(AuthRepository::class.java)
-        userRepository = mock(UserRepository::class.java)
-        contentRepository = mock(ContentRepository::class.java)
-        mediaUploadRepository = mock(com.ott.platform.data.repository.MediaUploadRepository::class.java)
+        authRepository = mockk(relaxed = true)
+        userRepository = mockk(relaxed = true)
+        contentRepository = mockk(relaxed = true)
+        mediaUploadRepository = mockk(relaxed = true)
     }
 
     @After
@@ -54,9 +57,9 @@ class AdminContentViewModelTest {
 
     @Test
     fun `loadAdminData as admin loads content successfully`() = runTest {
-        `when`(authRepository.currentUser).thenReturn(flowOf(mockFirebaseUser))
-        `when`(userRepository.observeUser("admin_uid")).thenReturn(flowOf(adminUser))
-        `when`(contentRepository.observeAllContentAdmin("tenant_1")).thenReturn(flowOf(emptyList()))
+        coEvery { authRepository.currentUser } returns flowOf(mockFirebaseUser)
+        coEvery { userRepository.observeUser("admin_uid") } returns flowOf(adminUser)
+        coEvery { contentRepository.observeAllContentAdmin("tenant_1") } returns flowOf(emptyList())
 
         viewModel = AdminContentViewModel(authRepository, userRepository, contentRepository, mediaUploadRepository)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -67,8 +70,8 @@ class AdminContentViewModelTest {
 
     @Test
     fun `loadAdminData as normal user shows unauthorized error`() = runTest {
-        `when`(authRepository.currentUser).thenReturn(flowOf(mockFirebaseUser))
-        `when`(userRepository.observeUser("admin_uid")).thenReturn(flowOf(normalUser))
+        coEvery { authRepository.currentUser } returns flowOf(mockFirebaseUser)
+        coEvery { userRepository.observeUser("admin_uid") } returns flowOf(normalUser)
 
         viewModel = AdminContentViewModel(authRepository, userRepository, contentRepository, mediaUploadRepository)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -78,9 +81,9 @@ class AdminContentViewModelTest {
 
     @Test
     fun `createOrUpdateContent restricts saving to other tenant`() = runTest {
-        `when`(authRepository.currentUser).thenReturn(flowOf(mockFirebaseUser))
-        `when`(userRepository.observeUser("admin_uid")).thenReturn(flowOf(adminUser))
-        `when`(contentRepository.observeAllContentAdmin("tenant_1")).thenReturn(flowOf(emptyList()))
+        coEvery { authRepository.currentUser } returns flowOf(mockFirebaseUser)
+        coEvery { userRepository.observeUser("admin_uid") } returns flowOf(adminUser)
+        coEvery { contentRepository.observeAllContentAdmin("tenant_1") } returns flowOf(emptyList())
 
         viewModel = AdminContentViewModel(authRepository, userRepository, contentRepository, mediaUploadRepository)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -94,9 +97,9 @@ class AdminContentViewModelTest {
     
     @Test
     fun `publishContent calls repository with PUBLISHED status`() = runTest {
-        `when`(authRepository.currentUser).thenReturn(flowOf(mockFirebaseUser))
-        `when`(userRepository.observeUser("admin_uid")).thenReturn(flowOf(adminUser))
-        `when`(contentRepository.observeAllContentAdmin("tenant_1")).thenReturn(flowOf(emptyList()))
+        coEvery { authRepository.currentUser } returns flowOf(mockFirebaseUser)
+        coEvery { userRepository.observeUser("admin_uid") } returns flowOf(adminUser)
+        coEvery { contentRepository.observeAllContentAdmin("tenant_1") } returns flowOf(emptyList())
 
         viewModel = AdminContentViewModel(authRepository, userRepository, contentRepository, mediaUploadRepository)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -104,23 +107,22 @@ class AdminContentViewModelTest {
         viewModel.publishContent("content_1")
         testDispatcher.scheduler.advanceUntilIdle()
         
-        verify(contentRepository).updateContentStatus("content_1", ContentStatus.PUBLISHED.name)
+        coVerify { contentRepository.updateContentStatus("content_1", ContentStatus.PUBLISHED.name) }
     }
     
     @Test
     fun `uploadMedia requests auth and handles failure`() = runTest {
-        `when`(authRepository.currentUser).thenReturn(flowOf(mockFirebaseUser))
-        `when`(userRepository.observeUser("admin_uid")).thenReturn(flowOf(adminUser))
-        `when`(contentRepository.observeAllContentAdmin("tenant_1")).thenReturn(flowOf(emptyList()))
+        coEvery { authRepository.currentUser } returns flowOf(mockFirebaseUser)
+        coEvery { userRepository.observeUser("admin_uid") } returns flowOf(adminUser)
+        coEvery { contentRepository.observeAllContentAdmin("tenant_1") } returns flowOf(emptyList())
 
         viewModel = AdminContentViewModel(authRepository, userRepository, contentRepository, mediaUploadRepository)
         testDispatcher.scheduler.advanceUntilIdle()
         
-        `when`(mediaUploadRepository.requestUploadAuthorization(anyString(), anyString(), anyString(), anyString(), anyLong()))
-            .thenThrow(RuntimeException("Network Error"))
+        coEvery { mediaUploadRepository.requestUploadAuthorization(any(), any(), any(), any(), any()) } throws RuntimeException("Network Error")
 
         val mediaSource = com.ott.platform.data.model.MediaSource(
-            uri = mock(android.net.Uri::class.java),
+            uri = mockk(relaxed = true),
             displayName = "test.mp4",
             mimeType = "video/mp4",
             sizeBytes = 1024L
@@ -129,6 +131,6 @@ class AdminContentViewModelTest {
         viewModel.uploadMedia("content_1", com.ott.platform.data.model.MediaType.MAIN_VIDEO, mediaSource)
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals("Failed to start upload: Network Error", viewModel.errorMessage.value)
+        assertEquals("Failed to upload media: Network Error", viewModel.errorMessage.value)
     }
 }

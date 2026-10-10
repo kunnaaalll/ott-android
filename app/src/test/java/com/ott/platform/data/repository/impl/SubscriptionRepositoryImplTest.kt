@@ -16,8 +16,8 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.*
+import io.mockk.every
+import io.mockk.mockk
 import java.util.Date
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -31,14 +31,14 @@ class SubscriptionRepositoryImplTest {
 
     @Before
     fun setup() {
-        firestore = mock(FirebaseFirestore::class.java)
-        collectionReference = mock(CollectionReference::class.java)
-        query = mock(Query::class.java)
-        querySnapshot = mock(QuerySnapshot::class.java)
+        firestore = mockk(relaxed = true)
+        collectionReference = mockk(relaxed = true)
+        query = mockk(relaxed = true)
+        querySnapshot = mockk(relaxed = true)
         
-        `when`(firestore.collection(anyString())).thenReturn(collectionReference)
-        `when`(collectionReference.whereEqualTo(anyString(), any())).thenReturn(query)
-        `when`(query.whereEqualTo(anyString(), any())).thenReturn(query)
+        every { firestore.collection(any()) } returns collectionReference
+        every { collectionReference.whereEqualTo(any<String>(), any()) } returns query
+        every { query.whereEqualTo(any<String>(), any()) } returns query
         
         repository = SubscriptionRepositoryImpl(firestore)
     }
@@ -46,8 +46,8 @@ class SubscriptionRepositoryImplTest {
     @Test
     fun `getPlans returns list of active plans`() = runTest {
         val mockPlan = Plan(id = "plan1", name = "Premium", price = 199.0, active = true)
-        `when`(query.get()).thenReturn(Tasks.forResult(querySnapshot))
-        `when`(querySnapshot.toObjects(Plan::class.java)).thenReturn(listOf(mockPlan))
+        every { query.get() } returns Tasks.forResult(querySnapshot)
+        every { querySnapshot.toObjects(Plan::class.java) } returns listOf(mockPlan)
 
         val plans = repository.getPlans("tenant1")
 
@@ -63,8 +63,8 @@ class SubscriptionRepositoryImplTest {
             expiryDate = Timestamp(futureDate)
         )
         
-        `when`(query.get()).thenReturn(Tasks.forResult(querySnapshot))
-        `when`(querySnapshot.toObjects(Subscription::class.java)).thenReturn(listOf(mockSub))
+        every { query.get() } returns Tasks.forResult(querySnapshot)
+        every { querySnapshot.toObjects(Subscription::class.java) } returns listOf(mockSub)
 
         val isActive = repository.isSubscriptionActive("user1", "tenant1")
 
@@ -79,8 +79,8 @@ class SubscriptionRepositoryImplTest {
             expiryDate = Timestamp(pastDate)
         )
         
-        `when`(query.get()).thenReturn(Tasks.forResult(querySnapshot))
-        `when`(querySnapshot.toObjects(Subscription::class.java)).thenReturn(listOf(mockSub))
+        every { query.get() } returns Tasks.forResult(querySnapshot)
+        every { querySnapshot.toObjects(Subscription::class.java) } returns listOf(mockSub)
 
         val isActive = repository.isSubscriptionActive("user1", "tenant1")
 
@@ -89,8 +89,8 @@ class SubscriptionRepositoryImplTest {
 
     @Test
     fun `isSubscriptionActive returns false when there are no subscriptions`() = runTest {
-        `when`(query.get()).thenReturn(Tasks.forResult(querySnapshot))
-        `when`(querySnapshot.toObjects(Subscription::class.java)).thenReturn(emptyList())
+        every { query.get() } returns Tasks.forResult(querySnapshot)
+        every { querySnapshot.toObjects(Subscription::class.java) } returns emptyList()
 
         val isActive = repository.isSubscriptionActive("user1", "tenant1")
 

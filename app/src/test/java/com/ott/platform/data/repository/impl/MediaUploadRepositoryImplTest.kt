@@ -11,7 +11,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.coEvery
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MediaUploadRepositoryImplTest {
@@ -23,26 +25,26 @@ class MediaUploadRepositoryImplTest {
 
     @Before
     fun setup() {
-        firestore = mock(FirebaseFirestore::class.java)
-        functions = mock(FirebaseFunctions::class.java)
-        context = mock(Context::class.java)
+        firestore = mockk(relaxed = true)
+        functions = mockk(relaxed = true)
+        context = mockk(relaxed = true)
 
         repository = MediaUploadRepositoryImpl(firestore, functions, context)
     }
 
     @Test
     fun `requestUploadAuthorization calls functions and maps response`() = runTest {
-        val callable = mock(HttpsCallableReference::class.java)
-        val result = mock(HttpsCallableResult::class.java)
+        val callable = mockk<HttpsCallableReference>(relaxed = true)
+        val result = mockk<HttpsCallableResult>(relaxed = true)
         val responseData = mapOf(
             "uploadId" to "upload_123",
             "signedUrl" to "https://s3.amazonaws.com/test",
             "sourceKey" to "uploads/tenant/sourceKey"
         )
 
-        `when`(functions.getHttpsCallable("createMediaUpload")).thenReturn(callable)
-        `when`(callable.call(any())).thenReturn(Tasks.forResult(result))
-        `when`(result.data).thenReturn(responseData)
+        every { functions.getHttpsCallable("createMediaUpload") } returns callable
+        every { callable.call(any()) } returns Tasks.forResult(result)
+        every { result.data } returns responseData
 
         val auth = repository.requestUploadAuthorization(
             contentId = "content_1",

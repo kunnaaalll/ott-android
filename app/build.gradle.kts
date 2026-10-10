@@ -25,6 +25,9 @@ android {
         // Tenant configuration — swap per white-label build
         buildConfigField("String", "TENANT_ID", "\"default-tenant\"")
         buildConfigField("String", "APP_NAME", "\"OTT Platform\"")
+        // CloudFront hostname configuration required for secure playback validation.
+        // MUST be overridden with the actual production hostname.
+        buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"\"")
     }
 
     buildTypes {
@@ -55,6 +58,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -115,6 +122,8 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation("org.mockito:mockito-core:5.12.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
     
     // Android Testing
     androidTestImplementation(libs.androidx.test.ext.junit)
@@ -122,3 +131,4 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}

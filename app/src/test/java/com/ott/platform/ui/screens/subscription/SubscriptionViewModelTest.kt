@@ -18,13 +18,18 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.mockk.every
+import com.google.firebase.auth.FirebaseUser
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SubscriptionViewModelTest {
 
     private lateinit var subscriptionRepository: SubscriptionRepository
     private lateinit var authRepository: AuthRepository
+    private lateinit var userRepository: com.ott.platform.data.repository.UserRepository
     private lateinit var paymentGateway: PaymentGateway
     private lateinit var viewModel: SubscriptionViewModel
 
@@ -33,9 +38,10 @@ class SubscriptionViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
-        subscriptionRepository = mock(SubscriptionRepository::class.java)
-        authRepository = mock(AuthRepository::class.java)
-        paymentGateway = mock(PaymentGateway::class.java)
+        subscriptionRepository = mockk(relaxed = true)
+        authRepository = mockk(relaxed = true)
+        userRepository = mockk(relaxed = true)
+        paymentGateway = mockk(relaxed = true)
     }
 
     @After
@@ -47,13 +53,16 @@ class SubscriptionViewModelTest {
     fun `initialization loads plans and subscription state`() = runTest {
         val user = User(id = "user1", tenantId = "tenant1")
         val plan = Plan(id = "plan1")
+        val firebaseUser = mockk<FirebaseUser>(relaxed = true) {
+            every { uid } returns "user1"
+        }
         
-        `when`(authRepository.getCurrentUser()).thenReturn(user)
-        `when`(subscriptionRepository.getPlans("tenant1")).thenReturn(listOf(plan))
-        `when`(subscriptionRepository.observeSubscription("user1", "tenant1"))
-            .thenReturn(flowOf(null))
+        coEvery { authRepository.currentUser } returns flowOf(firebaseUser)
+        coEvery { userRepository.observeUser("user1") } returns flowOf(user)
+        coEvery { subscriptionRepository.getPlans("tenant1") } returns listOf(plan)
+        coEvery { subscriptionRepository.observeSubscription("user1", "tenant1") } returns flowOf(null)
 
-        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, paymentGateway)
+        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, userRepository, paymentGateway)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(1, viewModel.plans.value.size)
@@ -63,17 +72,20 @@ class SubscriptionViewModelTest {
     @Test
     fun `subscription state becomes active when user has active subscription`() = runTest {
         val user = User(id = "user1", tenantId = "tenant1")
+        val firebaseUser = mockk<FirebaseUser>(relaxed = true) {
+            every { uid } returns "user1"
+        }
         val sub = Subscription(
             status = SubscriptionStatus.ACTIVE.name, 
             expiryDate = com.google.firebase.Timestamp(java.util.Date(System.currentTimeMillis() + 86400000))
         )
         
-        `when`(authRepository.getCurrentUser()).thenReturn(user)
-        `when`(subscriptionRepository.getPlans("tenant1")).thenReturn(emptyList())
-        `when`(subscriptionRepository.observeSubscription("user1", "tenant1"))
-            .thenReturn(flowOf(sub))
+        coEvery { authRepository.currentUser } returns flowOf(firebaseUser)
+        coEvery { userRepository.observeUser("user1") } returns flowOf(user)
+        coEvery { subscriptionRepository.getPlans("tenant1") } returns emptyList()
+        coEvery { subscriptionRepository.observeSubscription("user1", "tenant1") } returns flowOf(sub)
 
-        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, paymentGateway)
+        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, userRepository, paymentGateway)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(viewModel.subscriptionState.value is SubscriptionState.Active)
@@ -82,14 +94,17 @@ class SubscriptionViewModelTest {
     @Test
     fun `initiatePayment prevents duplicate calls`() = runTest {
         val user = User(id = "user1", tenantId = "tenant1")
+        val firebaseUser = mockk<FirebaseUser>(relaxed = true) {
+            every { uid } returns "user1"
+        }
         val plan = Plan(id = "plan1")
         
-        `when`(authRepository.getCurrentUser()).thenReturn(user)
-        `when`(subscriptionRepository.getPlans("tenant1")).thenReturn(emptyList())
-        `when`(subscriptionRepository.observeSubscription("user1", "tenant1"))
-            .thenReturn(flowOf(null))
+        coEvery { authRepository.currentUser } returns flowOf(firebaseUser)
+        coEvery { userRepository.observeUser("user1") } returns flowOf(user)
+        coEvery { subscriptionRepository.getPlans("tenant1") } returns emptyList()
+        coEvery { subscriptionRepository.observeSubscription("user1", "tenant1") } returns flowOf(null)
 
-        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, paymentGateway)
+        viewModel = SubscriptionViewModel(subscriptionRepository, authRepository, userRepository, paymentGateway)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Call twice
@@ -99,6 +114,6 @@ class SubscriptionViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
         
         // Verify payment gateway was only called once
-        verify(paymentGateway, times(1)).initiatePayment(user, plan)
+        coVerify(exactly = 1) { paymentGateway.initiatePayment(user, plan) }
     }
 }

@@ -10,6 +10,8 @@ import com.ott.platform.ui.components.EmptySearchState
 import com.ott.platform.ui.components.OttTextField
 import com.ott.platform.ui.theme.LocalSpacing
 import com.ott.platform.ui.theme.OttBackground
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.grid.items
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
@@ -51,7 +53,7 @@ fun SearchScreen(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
                 modifier = Modifier.fillMaxSize()
             ) {
-                androidx.compose.foundation.lazy.grid.items(
+                items(
                     items = uiState.results,
                     key = { it.id }
                 ) { content ->

@@ -68,3 +68,4 @@ payment-secret*
 # ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+staging/.terraform.d/

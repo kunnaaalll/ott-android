@@ -111,10 +111,24 @@ fun OttVideoPlayer(
     LaunchedEffect(playbackUrl, cookies) {
         if (playbackUrl != null) {
             val uri = android.net.Uri.parse(playbackUrl)
-            val host = uri.host ?: ""
-            // CloudFront domains follow the pattern: *.cloudfront.net
-            // Custom domains (e.g., cdn.yourdomain.com) must be added to this allowlist.
-            val isCloudFrontHost = host.endsWith(".cloudfront.net") || host.contains("cloudfront")
+            val scheme = uri.scheme
+            val host = uri.host?.lowercase() ?: ""
+            
+            if (scheme != "https") {
+                android.util.Log.e("OttVideoPlayer", "Refusing to attach cookies over insecure connection.")
+                onStateChanged(PlaybackState.Error("Playback configuration error.", "INSECURE_CONNECTION"))
+                return@LaunchedEffect
+            }
+
+            val configuredHost = com.ott.platform.BuildConfig.CLOUDFRONT_HOSTNAME
+            if (configuredHost.isEmpty()) {
+                android.util.Log.e("OttVideoPlayer", "CloudFront hostname not configured in BuildConfig.")
+                onStateChanged(PlaybackState.Error("Playback configuration error.", "MISSING_CONFIG"))
+                return@LaunchedEffect
+            }
+
+            // Only accept exactly configured hostnames
+            val isCloudFrontHost = (host == configuredHost)
             if (!isCloudFrontHost) {
                 // Do not attach cookies to non-CloudFront hosts.
                 // Log without the URL to avoid leaking it.

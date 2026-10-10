@@ -113,6 +113,21 @@ describe('authorizePlaybackHandler', () => {
         await expect(authorizePlaybackHandler(req as any, context as any)).rejects.toThrow('Invalid contentId format');
     });
 
+    it('rejects rate-limited users', async () => {
+        (admin.firestore().runTransaction as jest.Mock).mockImplementation(async (cb: Function) => {
+            return cb({
+                get: jest.fn().mockResolvedValue({ 
+                    exists: true, 
+                    data: () => ({ calls: new Array(20).fill(Date.now()) }) 
+                }),
+                set: jest.fn()
+            });
+        });
+        const req = { contentId: '123' };
+        const context = { auth: { uid: 'user1' } };
+        await expect(authorizePlaybackHandler(req as any, context as any)).rejects.toThrow('Too many authorization requests. Please try again later.');
+    });
+
     // ── Content Validation ────────────────────────────────────────────────────
 
     it('rejects missing content', async () => {

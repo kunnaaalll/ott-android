@@ -31,7 +31,7 @@ class AuthViewModelTest {
     private val crashReporter = mockk<CrashReporter>(relaxed = true)
     private val analyticsTracker = mockk<AnalyticsTracker>(relaxed = true)
 
-    private lateinit classUnderTest: AuthViewModel
+    private lateinit var classUnderTest: AuthViewModel
 
     private val testDispatcher = StandardTestDispatcher()
     private val currentUserFlow = MutableStateFlow<FirebaseUser?>(null)
@@ -75,6 +75,7 @@ class AuthViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
 
+        testDispatcher.scheduler.advanceUntilIdle()
         coVerify { analyticsTracker.logEvent("login_started") }
         coVerify { analyticsTracker.logEvent("login_success") }
         coVerify { userRepository.updateLastLogin("test_uid") }
@@ -94,6 +95,7 @@ class AuthViewModelTest {
             assertEquals("Invalid credentials", errorState.message)
         }
 
+        testDispatcher.scheduler.advanceUntilIdle()
         coVerify { crashReporter.logException(error) }
         coVerify { analyticsTracker.logEvent("login_failed") }
     }
@@ -109,6 +111,7 @@ class AuthViewModelTest {
         coEvery { authRepository.registerWithEmail("test@test.com", "password") } returns Result.success(mockUser)
 
         classUnderTest.register("test@test.com", "password")
+        testDispatcher.scheduler.advanceUntilIdle()
 
         coVerify { userRepository.createOrUpdateUser(any()) }
         coVerify { analyticsTracker.logEvent("registration_success") }

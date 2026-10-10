@@ -7,7 +7,9 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "jest --forceExit"
+    "test:unit": "jest --testPathIgnorePatterns=integration.test.ts --forceExit --no-watchman",
+    "test:integration": "jest --testMatch=\"**/*.integration.test.ts\" --forceExit --no-watchman",
+    "test": "npm run test:unit"
   },
   "engines": {
     "node": "18"

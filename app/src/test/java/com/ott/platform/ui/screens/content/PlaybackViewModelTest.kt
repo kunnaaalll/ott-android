@@ -211,9 +211,7 @@ class PlaybackViewModelTest {
             // Immediately switch to a different content before first response
             viewModel.authorizeAndPlay("content-456")
             
-            // Multiple Authorizing transitions may occur
-            awaitItem() // First Authorizing for content-123
-            awaitItem() // Authorizing for content-456 (resets state)
+            awaitItem() // Authorizing
             
             val finalState = awaitItem()
             assertEquals(PlaybackState.Preparing, finalState)

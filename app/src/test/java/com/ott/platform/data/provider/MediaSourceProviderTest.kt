@@ -9,7 +9,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 
 class MediaSourceProviderTest {
 
@@ -21,26 +23,26 @@ class MediaSourceProviderTest {
 
     @Before
     fun setup() {
-        context = mock(Context::class.java)
-        contentResolver = mock(ContentResolver::class.java)
-        uri = mock(Uri::class.java)
-        cursor = mock(Cursor::class.java)
+        context = mockk(relaxed = true)
+        contentResolver = mockk(relaxed = true)
+        uri = mockk(relaxed = true)
+        cursor = mockk(relaxed = true)
 
-        `when`(context.contentResolver).thenReturn(contentResolver)
+        every { context.contentResolver } returns contentResolver
         mediaSourceProvider = MediaSourceProvider(context)
     }
 
     @Test
     fun `getMediaSource extracts metadata correctly`() {
-        `when`(contentResolver.getType(uri)).thenReturn("video/mp4")
-        `when`(contentResolver.query(uri, null, null, null, null)).thenReturn(cursor)
+        every { contentResolver.getType(uri) } returns "video/mp4"
+        every { contentResolver.query(uri, null, null, null, null) } returns cursor
         
-        `when`(cursor.moveToFirst()).thenReturn(true)
-        `when`(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)).thenReturn(0)
-        `when`(cursor.getColumnIndex(OpenableColumns.SIZE)).thenReturn(1)
+        every { cursor.moveToFirst() } returns true
+        every { cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME) } returns 0
+        every { cursor.getColumnIndex(OpenableColumns.SIZE) } returns 1
         
-        `when`(cursor.getString(0)).thenReturn("test_video.mp4")
-        `when`(cursor.getLong(1)).thenReturn(1048576L)
+        every { cursor.getString(0) } returns "test_video.mp4"
+        every { cursor.getLong(1) } returns 1048576L
 
         val source = mediaSourceProvider.getMediaSource(uri)
 
@@ -48,13 +50,13 @@ class MediaSourceProviderTest {
         assertEquals("test_video.mp4", source.displayName)
         assertEquals(1048576L, source.sizeBytes)
         
-        verify(cursor).close()
+        verify { cursor.close() }
     }
 
     @Test
     fun `getMediaSource handles inaccessible URI safely`() {
-        `when`(contentResolver.getType(uri)).thenReturn(null)
-        `when`(contentResolver.query(uri, null, null, null, null)).thenReturn(null)
+        every { contentResolver.getType(uri) } returns null
+        every { contentResolver.query(uri, null, null, null, null) } returns null
 
         val source = mediaSourceProvider.getMediaSource(uri)
 

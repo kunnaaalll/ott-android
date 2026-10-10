@@ -1,0 +1,13 @@
+# Example Terraform Variables file.
+# DO NOT put real secrets or credentials in this file.
+
+aws_region                = "us-east-1"
+environment               = "staging"
+content_bucket_name       = "ott-staging-content-bucket-REPLACEME"
+
+# Provide the PUBLIC key in PEM format. Keep the PRIVATE key strictly in Firebase Secrets.
+cloudfront_public_key_pem = <<EOF
+-----BEGIN PUBLIC KEY-----
+YOUR_PUBLIC_KEY_CONTENT_HERE
+-----END PUBLIC KEY-----
+EOF

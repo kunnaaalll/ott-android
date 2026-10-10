@@ -322,6 +322,19 @@ export const mediaConvertWebhook = functions.https.onRequest((req, res) => {
             }
 
             // Process MediaConvert Event
+            const expectedTopic = process.env.MEDIACONVERT_SNS_TOPIC_ARN;
+            if (!expectedTopic || expectedTopic.trim() === '') {
+                functions.logger.error("Missing MEDIACONVERT_SNS_TOPIC_ARN configuration");
+                res.status(500).send('Internal Configuration Error');
+                return;
+            }
+
+            if (!message.TopicArn || message.TopicArn !== expectedTopic) {
+                functions.logger.error("Invalid or missing SNS Topic ARN", { topicArn: message.TopicArn });
+                res.status(401).send('Invalid Topic');
+                return;
+            }
+
             const payload = typeof message.Message === 'string' ? JSON.parse(message.Message) : message.Message;
             
             if (payload.source !== 'aws.mediaconvert') {
