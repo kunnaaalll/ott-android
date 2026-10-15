@@ -24,10 +24,33 @@ data class Subscription(
     @PropertyName("planId")
     val planId: String = "",
 
+    @PropertyName("status")
+    val status: String = SubscriptionStatus.PENDING.name,
+
+    @PropertyName("currentPeriodStart")
+    val currentPeriodStart: Long? = null,
+
+    @PropertyName("currentPeriodEnd")
+    val currentPeriodEnd: Long? = null,
+
+    @PropertyName("cancelAtPeriodEnd")
+    val cancelAtPeriodEnd: Boolean = false,
+
+    @PropertyName("gracePeriodEnd")
+    val gracePeriodEnd: Long? = null,
+
+    @PropertyName("provider")
+    val provider: String? = null,
+
+    @PropertyName("providerSubscriptionId")
+    val providerSubscriptionId: String? = null,
+
+    @PropertyName("lastVerifiedAt")
+    val lastVerifiedAt: Long? = null,
+
+    // Legacy fields for backward compatibility
     @PropertyName("gatewaySubscriptionId")
     val gatewaySubscriptionId: String = "",
-
-    val status: String = SubscriptionStatus.PENDING.name,
 
     @PropertyName("startDate")
     val startDate: Timestamp? = null,
@@ -43,12 +66,27 @@ data class Subscription(
     val updatedAt: Timestamp? = null,
 ) {
     /**
-     * Whether the subscription grants access right now.
-     * Checks both status == ACTIVE and expiryDate > now.
+     * Client-side presentation helper.
+     * Evaluates access according to canonical rules:
+     * - ACTIVE: currentPeriodEnd > now (or legacy expiryDate > now)
+     * - CANCELLED: currentPeriodEnd > now (if cancelAtPeriodEnd is true)
+     * - GRACE_PERIOD: gracePeriodEnd > now
+     * - All other states: false
+     *
+     * Note: Authorization authority strictly resides in backend Cloud Functions.
      */
     fun isActive(): Boolean {
-        val statusActive = SubscriptionStatus.fromString(status) == SubscriptionStatus.ACTIVE
-        val notExpired = expiryDate?.let { it.toDate().time > System.currentTimeMillis() } ?: false
-        return statusActive && notExpired
+        val now = System.currentTimeMillis()
+        val canonicalEnd = currentPeriodEnd ?: expiryDate?.toDate()?.time ?: return false
+
+        return when (SubscriptionStatus.fromString(status)) {
+            SubscriptionStatus.ACTIVE -> canonicalEnd > now
+            SubscriptionStatus.CANCELLED -> cancelAtPeriodEnd && canonicalEnd > now
+            SubscriptionStatus.GRACE_PERIOD -> {
+                val graceEnd = gracePeriodEnd ?: return false
+                graceEnd > now
+            }
+            else -> false
+        }
     }
 }

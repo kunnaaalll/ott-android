@@ -40,8 +40,8 @@ service cloud.firestore {
       // themselves as admin or assign themselves a tenantId.
       // tenantId is assigned server-side after account creation.
       allow create: if isCurrentUser(userId)
-                    && (!(\"isAdmin\" in request.resource.data) || request.resource.data.isAdmin == false)
-                    && !(\"tenantId\" in request.resource.data);
+                    && (!("isAdmin" in request.resource.data) || request.resource.data.isAdmin == false)
+                    && !("tenantId" in request.resource.data);
 
       // User can update display/profile fields but cannot change protected fields.
       allow update: if isCurrentUser(userId)

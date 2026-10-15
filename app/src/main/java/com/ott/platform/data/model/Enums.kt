@@ -7,14 +7,12 @@ package com.ott.platform.data.model
 enum class SubscriptionStatus {
     PENDING,
     ACTIVE,
-    EXPIRED,
+    GRACE_PERIOD,
+    PAUSED,
     CANCELLED,
+    EXPIRED,
     FAILED,
-
-    // Future states (not used in MVP)
-    // PAUSED,
-    // REFUNDED,
-    // GRACE_PERIOD,
+    REFUNDED,
     ;
 
     companion object {

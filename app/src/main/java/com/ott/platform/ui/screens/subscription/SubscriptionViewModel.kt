@@ -80,10 +80,23 @@ class SubscriptionViewModel @Inject constructor(
                                 _subscriptionState.value = SubscriptionState.Expired
                             }
                         }
+                        SubscriptionStatus.GRACE_PERIOD -> {
+                            if (subscription.isActive()) {
+                                _subscriptionState.value = SubscriptionState.Active(subscription)
+                            } else {
+                                _subscriptionState.value = SubscriptionState.Expired
+                            }
+                        }
                         SubscriptionStatus.PENDING -> {
                             _subscriptionState.value = SubscriptionState.Pending
                         }
+                        SubscriptionStatus.PAUSED -> {
+                            _subscriptionState.value = SubscriptionState.Inactive
+                        }
                         SubscriptionStatus.EXPIRED -> {
+                            _subscriptionState.value = SubscriptionState.Expired
+                        }
+                        SubscriptionStatus.REFUNDED -> {
                             _subscriptionState.value = SubscriptionState.Expired
                         }
                         SubscriptionStatus.CANCELLED -> {
