@@ -2,6 +2,7 @@ package com.ott.platform.data.repository.impl
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.ott.platform.data.model.Plan
+import com.ott.platform.data.model.PlanDefaults
 import com.ott.platform.data.repository.PlanRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -23,10 +24,11 @@ class PlanRepositoryImpl @Inject constructor(
             .whereEqualTo("active", true)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(PlanDefaults.getPlans(tenantId))
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.toObjects(Plan::class.java) ?: emptyList())
+                val plans = snapshot?.toObjects(Plan::class.java) ?: emptyList()
+                trySend(if (plans.isNotEmpty()) plans else PlanDefaults.getPlans(tenantId))
             }
         awaitClose { listener.remove() }
     }
@@ -36,13 +38,15 @@ class PlanRepositoryImpl @Inject constructor(
             .whereEqualTo("tenantId", tenantId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(PlanDefaults.getPlans(tenantId))
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.toObjects(Plan::class.java) ?: emptyList())
+                val plans = snapshot?.toObjects(Plan::class.java) ?: emptyList()
+                trySend(if (plans.isNotEmpty()) plans else PlanDefaults.getPlans(tenantId))
             }
         awaitClose { listener.remove() }
     }
+
 
     override suspend fun getPlanById(planId: String): Plan? {
         val snapshot = plansCollection.document(planId).get().await()

@@ -21,4 +21,8 @@ interface SubscriptionRepository {
 
     /** Check whether the user currently has an active subscription. */
     suspend fun isSubscriptionActive(userId: String, tenantId: String): Boolean
+
+    /** Record or cache an active subscription upon successful payment verification. */
+    suspend fun recordActiveSubscription(subscription: Subscription)
 }
+

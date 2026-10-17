@@ -118,14 +118,21 @@ class SubscriptionViewModel @Inject constructor(
     private fun loadPlans() {
         viewModelScope.launch {
             try {
-                val firebaseUser = authRepository.currentUser.firstOrNull() ?: return@launch
-                val user = userRepository.observeUser(firebaseUser.uid).firstOrNull() ?: return@launch
-                _plans.value = subscriptionRepository.getPlans(user.tenantId)
+                val firebaseUser = authRepository.currentUser.firstOrNull()
+                val tenantId = if (firebaseUser != null) {
+                    val user = userRepository.observeUser(firebaseUser.uid).firstOrNull()
+                    user?.tenantId ?: "default-tenant"
+                } else {
+                    "default-tenant"
+                }
+                val loadedPlans = subscriptionRepository.getPlans(tenantId)
+                _plans.value = if (loadedPlans.isNotEmpty()) loadedPlans else com.ott.platform.data.model.PlanDefaults.getPlans(tenantId)
             } catch (e: Exception) {
-                // Ignore or handle
+                _plans.value = com.ott.platform.data.model.PlanDefaults.getPlans("default-tenant")
             }
         }
     }
+
 
     fun initiatePayment(plan: Plan) {
         if (_isPaymentProcessing.value) return

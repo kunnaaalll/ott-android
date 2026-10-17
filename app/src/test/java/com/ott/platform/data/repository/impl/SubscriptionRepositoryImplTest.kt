@@ -96,4 +96,33 @@ class SubscriptionRepositoryImplTest {
 
         assertFalse(isActive)
     }
+
+    @Test
+    fun `getPlans falls back to PlanDefaults when firestore returns empty list`() = runTest {
+        every { query.get() } returns Tasks.forResult(querySnapshot)
+        every { querySnapshot.toObjects(Plan::class.java) } returns emptyList()
+
+        val plans = repository.getPlans("tenant1")
+
+        assertEquals(6, plans.size)
+        assertEquals("plan_year_vip", plans[0].id)
+        assertEquals(599.0, plans[0].price, 0.001)
+    }
+
+    @Test
+    fun `recordActiveSubscription updates local state and makes subscription active`() = runTest {
+        val futureEnd = System.currentTimeMillis() + 86400000L
+        val sub = Subscription(
+            id = "sub_test",
+            userId = "user1",
+            status = SubscriptionStatus.ACTIVE.name,
+            currentPeriodEnd = futureEnd
+        )
+
+        repository.recordActiveSubscription(sub)
+        val isActive = repository.isSubscriptionActive("user1", "tenant1")
+
+        assertTrue(isActive)
+    }
 }
+
