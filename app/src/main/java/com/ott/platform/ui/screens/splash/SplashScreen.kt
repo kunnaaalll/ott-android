@@ -22,6 +22,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ott.platform.ui.screens.auth.AuthViewModel
 import com.ott.platform.ui.screens.auth.AuthState
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ott.platform.R
+import com.ott.platform.ui.theme.ChumbakAmberLight
+
 @Composable
 fun SplashScreen(
     onSplashFinished: (isAuthenticated: Boolean) -> Unit,
@@ -33,7 +47,7 @@ fun SplashScreen(
         // Only trigger navigation if auth state is resolved (not Idle or Loading if we treat Idle as unresolved)
         // Actually AuthViewModel starts by observing Firebase user.
         // Idle -> Authenticated or Unauthenticated.
-        delay(500) // Small delay for splash visibility
+        delay(800) // Small delay for splash visibility
         when (authState) {
             is AuthState.Authenticated -> onSplashFinished(true)
             is AuthState.Unauthenticated -> onSplashFinished(false)
@@ -48,11 +62,25 @@ fun SplashScreen(
             .background(OttBackground),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = BuildConfig.APP_NAME.uppercase(),
-            style = MaterialTheme.typography.displayMedium,
-            color = OttRed,
-            fontWeight = FontWeight.Bold,
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.chumbak_logo),
+                contentDescription = BuildConfig.APP_NAME,
+                modifier = Modifier
+                    .size(200.dp)
+                    .clip(RoundedCornerShape(24.dp))
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = BuildConfig.APP_NAME.uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+                color = ChumbakAmberLight,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp
+            )
+        }
     }
 }

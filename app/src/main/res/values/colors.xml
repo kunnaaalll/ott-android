@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="chumbak_black">#000000</color>
+    <color name="chumbak_dark_bg">#0A0A0C</color>
+    <color name="chumbak_amber">#F59E0B</color>
+    <color name="chumbak_amber_dark">#D97706</color>
+    <color name="chumbak_pink">#EC4899</color>
+    <color name="chumbak_violet">#8B5CF6</color>
+</resources>

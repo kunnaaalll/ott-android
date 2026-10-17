@@ -25,23 +25,49 @@ class PlaybackViewModel @Inject constructor(
     val cookies: StateFlow<Map<String, String>> = _cookies.asStateFlow()
 
     private var currentContentId: String? = null
+    private var currentIsTrailer: Boolean = false
+    private var currentSeriesId: String? = null
+    private var currentSeasonId: String? = null
 
-    fun authorizeAndPlay(contentId: String) {
+    fun authorizeAndPlay(
+        contentId: String,
+        isTrailer: Boolean = false,
+        seriesId: String? = null,
+        seasonId: String? = null
+    ) {
+        val isSameRequest = contentId == currentContentId &&
+                isTrailer == currentIsTrailer &&
+                seriesId == currentSeriesId &&
+                seasonId == currentSeasonId
+
         // Prevent race conditions and unnecessary re-authorizations
-        if (contentId == currentContentId && _playbackState.value !is PlaybackState.Error) {
+        if (isSameRequest && _playbackState.value !is PlaybackState.Error) {
             return
         }
 
         currentContentId = contentId
+        currentIsTrailer = isTrailer
+        currentSeriesId = seriesId
+        currentSeasonId = seasonId
+
         _playbackState.value = PlaybackState.Authorizing
         _playbackUrl.value = null
         _cookies.value = emptyMap()
 
         viewModelScope.launch {
-            val result = playbackAuthorizationRepository.authorizePlayback(contentId)
+            val result = playbackAuthorizationRepository.authorizePlayback(
+                contentId = contentId,
+                isTrailer = isTrailer,
+                seriesId = seriesId,
+                seasonId = seasonId
+            )
             
-            // Check if the content ID has changed while we were waiting
-            if (currentContentId != contentId) {
+            // Check if the parameters have changed while we were waiting
+            if (currentContentId != contentId ||
+                currentIsTrailer != isTrailer ||
+                currentSeriesId != seriesId ||
+                currentSeasonId != seasonId
+            ) {
                 return@launch
             }
 
@@ -77,14 +103,19 @@ class PlaybackViewModel @Inject constructor(
     }
 
     fun retry() {
-        currentContentId?.let {
-            currentContentId = null // clear to force re-auth
-            authorizeAndPlay(it)
-        }
+        val contentId = currentContentId ?: return
+        val isTrailer = currentIsTrailer
+        val seriesId = currentSeriesId
+        val seasonId = currentSeasonId
+        currentContentId = null // clear to force re-auth
+        authorizeAndPlay(contentId, isTrailer, seriesId, seasonId)
     }
 
     fun clear() {
         currentContentId = null
+        currentIsTrailer = false
+        currentSeriesId = null
+        currentSeasonId = null
         _playbackUrl.value = null
         _cookies.value = emptyMap()
         _playbackState.value = PlaybackState.Idle

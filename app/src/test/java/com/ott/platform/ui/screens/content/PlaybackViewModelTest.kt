@@ -249,4 +249,75 @@ class PlaybackViewModelTest {
             assertFalse("Cookie value should not look like a private key", value.startsWith("-----BEGIN"))
         }
     }
+
+    // ── Episodic Playback ──────────────────────────────────────────────────────
+
+    @Test
+    fun `authorizeAndPlay with seriesId and seasonId invokes repository with episodic parameters`() = runTest {
+        coEvery {
+            repository.authorizePlayback(
+                contentId = "ep-101",
+                isTrailer = false,
+                seriesId = "ser-1",
+                seasonId = "sea-1"
+            )
+        } returns Result.success(
+            PlaybackAuthorization(true, "https://d.cloudfront.net/content/t1/ser-1/seasons/sea-1/episodes/ep-101/main/hls/master.m3u8", 0L)
+        )
+
+        viewModel.playbackState.test {
+            assertEquals(PlaybackState.Idle, awaitItem())
+            viewModel.authorizeAndPlay(
+                contentId = "ep-101",
+                isTrailer = false,
+                seriesId = "ser-1",
+                seasonId = "sea-1"
+            )
+            assertEquals(PlaybackState.Authorizing, awaitItem())
+            assertEquals(PlaybackState.Preparing, awaitItem())
+        }
+
+        assertEquals(
+            "https://d.cloudfront.net/content/t1/ser-1/seasons/sea-1/episodes/ep-101/main/hls/master.m3u8",
+            viewModel.playbackUrl.value
+        )
+    }
+
+    @Test
+    fun `retry preserves episodic parameters seriesId and seasonId`() = runTest {
+        var callCount = 0
+        coEvery {
+            repository.authorizePlayback(
+                contentId = "ep-101",
+                isTrailer = false,
+                seriesId = "ser-1",
+                seasonId = "sea-1"
+            )
+        } coAnswers {
+            callCount++
+            if (callCount == 1) {
+                Result.failure(Exception("SERVER_ERROR"))
+            } else {
+                Result.success(PlaybackAuthorization(true, "hls-url", 0L))
+            }
+        }
+
+        viewModel.playbackState.test {
+            assertEquals(PlaybackState.Idle, awaitItem())
+            viewModel.authorizeAndPlay(
+                contentId = "ep-101",
+                isTrailer = false,
+                seriesId = "ser-1",
+                seasonId = "sea-1"
+            )
+            assertEquals(PlaybackState.Authorizing, awaitItem())
+            awaitItem() as PlaybackState.Error
+
+            viewModel.retry()
+            assertEquals(PlaybackState.Authorizing, awaitItem())
+            assertEquals(PlaybackState.Preparing, awaitItem())
+        }
+
+        assertEquals(2, callCount)
+    }
 }

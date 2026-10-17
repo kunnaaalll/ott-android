@@ -24,7 +24,7 @@ android {
 
         // Tenant configuration — swap per white-label build
         buildConfigField("String", "TENANT_ID", "\"default-tenant\"")
-        buildConfigField("String", "APP_NAME", "\"OTT Platform\"")
+        buildConfigField("String", "APP_NAME", "\"Chumbak OTT\"")
         // CloudFront hostname configuration required for secure playback validation.
         // MUST be overridden with the actual production hostname.
         buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"\"")
@@ -35,6 +35,8 @@ android {
             isDebuggable = true
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // For debug and local development, provide a development hostname to prevent MISSING_CONFIG crash
+            buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"d111111abcdef8.cloudfront.net\"")
         }
         release {
             isMinifyEnabled = true

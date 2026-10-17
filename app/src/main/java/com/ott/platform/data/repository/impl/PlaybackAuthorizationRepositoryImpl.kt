@@ -13,19 +13,32 @@ class PlaybackAuthorizationRepositoryImpl @Inject constructor(
     private val functions: FirebaseFunctions
 ) : PlaybackAuthorizationRepository {
 
-    override suspend fun authorizePlayback(contentId: String, isTrailer: Boolean): Result<PlaybackAuthorization> {
+    override suspend fun authorizePlayback(
+        contentId: String,
+        isTrailer: Boolean,
+        seriesId: String?,
+        seasonId: String?
+    ): Result<PlaybackAuthorization> {
         return try {
+            val payload = mutableMapOf<String, Any>(
+                "contentId" to contentId,
+                "isTrailer" to isTrailer
+            )
+            if (seriesId != null) payload["seriesId"] = seriesId
+            if (seasonId != null) payload["seasonId"] = seasonId
+
             val result = functions
                 .getHttpsCallable("authorizePlayback")
-                .call(mapOf("contentId" to contentId, "isTrailer" to isTrailer))
+                .call(payload)
                 .await()
             
-            val data = result.data as? Map<String, Any>
+            val data = result.data as? Map<*, *>
                 ?: return Result.failure(Exception("Invalid response format"))
                 
             val authorized = data["authorized"] as? Boolean ?: false
             val playbackUrl = data["playbackUrl"] as? String ?: ""
             val expiresAt = (data["expiresAt"] as? Number)?.toLong() ?: 0L
+            @Suppress("UNCHECKED_CAST")
             val cookiesMap = data["cookies"] as? Map<String, String> ?: emptyMap()
             val reason = data["reason"] as? String
 

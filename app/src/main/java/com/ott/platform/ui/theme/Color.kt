@@ -9,14 +9,22 @@ import androidx.compose.ui.graphics.Color
  * Deep blacks with vibrant accent colors for a theatrical feel.
  */
 
-// ── Primary Brand ──────────────────────────────────────────────────
-val OttRed = Color(0xFFE50914)            // Netflix-style hero red
-val OttRedDark = Color(0xFFB2070F)        // Pressed / darker variant
-val OttRedLight = Color(0xFFFF3D47)       // Highlights, badges
+// ── Primary Brand: Chumbak OTT ──────────────────────────────────────
+val ChumbakAmber = Color(0xFFF59E0B)       // Signature glowing amber
+val ChumbakAmberDark = Color(0xFFD97706)   // Pressed / deep amber
+val ChumbakAmberLight = Color(0xFFFBBF24)  // Golden highlight / badges
+val ChumbakPink = Color(0xFFEC4899)        // Accent spark magenta/pink
+val ChumbakViolet = Color(0xFF8B5CF6)      // Accent spark violet
+val ChumbakBlack = Color(0xFF000000)       // Pure black background
+
+// Aliases for unified system-wide UI integration:
+val OttRed = ChumbakAmber
+val OttRedDark = ChumbakAmberDark
+val OttRedLight = ChumbakAmberLight
 
 // ── Accent / Secondary ─────────────────────────────────────────────
-val OttGold = Color(0xFFE5A913)           // Premium / subscription accents
-val OttGoldDark = Color(0xFFB88A0F)
+val OttGold = Color(0xFFFBBF24)           // Premium / subscription accents
+val OttGoldDark = Color(0xFFD97706)
 val OttTeal = Color(0xFF1DB9AA)           // Success states, active indicators
 val OttTealDark = Color(0xFF17978B)
 
