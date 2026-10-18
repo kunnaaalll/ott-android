@@ -42,45 +42,41 @@ fun ProfileScreen(
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSupportDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = OttBackground
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-                .padding(horizontal = spacing.screenPadding)
-        ) {
-            Spacer(modifier = Modifier.height(spacing.md))
-
-            // ── Screen Header ──────────────────────────────────────────
-            Text(
-                text = "Profile & Account",
-                style = MaterialTheme.typography.headlineMedium,
-                color = OttGold,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Text(
-                text = "Manage your Chumbak OTT account, subscription & settings",
-                style = MaterialTheme.typography.bodySmall,
-                color = OttTextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(spacing.lg))
-
-            if (uiState.isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = OttGold)
-                }
-                return@Scaffold
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(OttBackground)
+    ) {
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = OttGold)
             }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = spacing.screenPadding)
+            ) {
+                Spacer(modifier = Modifier.height(spacing.md))
+
+                // ── Screen Header ──────────────────────────────────────────
+                Text(
+                    text = "Profile & Account",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = OttGold,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = "Manage your Chumbak OTT account, subscription & settings",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OttTextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(spacing.lg))
 
             // ── User Identity Hero Card ────────────────────────────────
             Surface(
@@ -556,6 +552,13 @@ fun ProfileScreen(
             // Comfortable clearance above bottom navigation
             Spacer(modifier = Modifier.height(spacing.bottomNavHeight + 40.dp))
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = spacing.bottomNavHeight + 16.dp)
+        )
     }
 
     // ── Dialog: Sign Out Confirmation ──────────────────────────────────
