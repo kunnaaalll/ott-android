@@ -552,14 +552,15 @@ fun ProfileScreen(
             // Comfortable clearance above bottom navigation
             Spacer(modifier = Modifier.height(spacing.bottomNavHeight + 40.dp))
         }
-
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = spacing.bottomNavHeight + 16.dp)
-        )
     }
+
+    SnackbarHost(
+        hostState = snackbarHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = spacing.bottomNavHeight + 16.dp)
+    )
+}
 
     // ── Dialog: Sign Out Confirmation ──────────────────────────────────
     if (showSignOutDialog) {

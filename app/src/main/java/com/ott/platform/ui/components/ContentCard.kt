@@ -20,6 +20,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ott.platform.ui.theme.OttGradientEnd
 import com.ott.platform.ui.theme.OttGradientStart
@@ -36,7 +37,7 @@ fun ContentCard(
     posterUrl: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 120.dp,
+    width: Dp = 130.dp,
     aspectRatio: Float = 0.7f, // Poster ratio (2:3 approx)
     showTitle: Boolean = true,
 ) {
@@ -56,7 +57,7 @@ fun ContentCard(
             contentScale = ContentScale.Crop,
         )
 
-        // Title gradient overlay
+        // Title gradient overlay with deep contrast
         if (showTitle) {
             Box(
                 modifier = Modifier
@@ -64,15 +65,27 @@ fun ContentCard(
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(OttGradientEnd, OttGradientStart),
+                            colors = listOf(
+                                androidx.compose.ui.graphics.Color.Transparent,
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.75f),
+                                androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.95f)
+                            ),
                         )
                     )
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = OttTextPrimary,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        fontSize = 13.sp,
+                        shadow = androidx.compose.ui.graphics.Shadow(
+                            color = androidx.compose.ui.graphics.Color.Black,
+                            offset = androidx.compose.ui.geometry.Offset(0f, 2f),
+                            blurRadius = 8f
+                        )
+                    ),
+                    color = androidx.compose.ui.graphics.Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )

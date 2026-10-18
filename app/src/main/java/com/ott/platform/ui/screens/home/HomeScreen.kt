@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.ott.platform.data.model.Content
@@ -128,7 +129,7 @@ private fun HeroBannerCarousel(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(420.dp)
+            .height(480.dp)
     ) {
         HorizontalPager(
             state = pagerState,
@@ -154,25 +155,26 @@ private fun HeroBannerCarousel(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(110.dp)
+                        .height(120.dp)
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
+                                colors = listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)
                             )
                         )
                 )
 
-                // Bottom Fade gradient into dark background
+                // Bottom Fade gradient into dark background for crisp text legibility
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.75f)
+                        .fillMaxHeight(0.85f)
                         .align(Alignment.BottomCenter)
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    OttBackground.copy(alpha = 0.6f),
+                                    Color.Black.copy(alpha = 0.5f),
+                                    Color.Black.copy(alpha = 0.88f),
                                     OttBackground
                                 )
                             )
@@ -184,7 +186,7 @@ private fun HeroBannerCarousel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 20.dp, vertical = 24.dp),
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Badge
@@ -195,20 +197,28 @@ private fun HeroBannerCarousel(
                     ) {
                         Text(
                             text = if (content.featured) "FEATURED" else "NEW RELEASE",
-                            color = Color.White,
+                            color = Color.Black,
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
 
-                    // Title
+                    // Title - Large, bold, and high-contrast
                     Text(
                         text = content.title,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
+                            shadow = androidx.compose.ui.graphics.Shadow(
+                                color = Color.Black,
+                                offset = androidx.compose.ui.geometry.Offset(0f, 4f),
+                                blurRadius = 24f
+                            )
+                        ),
                         color = Color.White,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
 
@@ -222,8 +232,15 @@ private fun HeroBannerCarousel(
                     if (content.description.isNotBlank()) metaParts.add(content.description)
                     Text(
                         text = metaParts.joinToString(" • "),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = OttTextSecondary,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            shadow = androidx.compose.ui.graphics.Shadow(
+                                color = Color.Black,
+                                offset = androidx.compose.ui.geometry.Offset(0f, 2f),
+                                blurRadius = 12f
+                            )
+                        ),
+                        color = Color(0xFFE2E8F0),
                         maxLines = 1
                     )
 
