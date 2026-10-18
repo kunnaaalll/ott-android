@@ -30,6 +30,15 @@ android {
         buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("${rootDir}/keystore/chumbak-upload-key.jks")
+            storePassword = "chumbak@release2026"
+            keyAlias = "chumbak-upload"
+            keyPassword = "chumbak@release2026"
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
@@ -41,7 +50,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"s3.in-west2.purestore.io\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
