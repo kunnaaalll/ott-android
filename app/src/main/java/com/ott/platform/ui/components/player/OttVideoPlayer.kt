@@ -44,6 +44,7 @@ fun OttVideoPlayer(
     onStateChanged: (PlaybackState) -> Unit,
     onRetry: () -> Unit,
     onGoToSubscription: () -> Unit,
+    onGoToLogin: () -> Unit = {},
     modifier: Modifier = Modifier,
     isFullscreen: Boolean = false,
     onFullscreenToggle: () -> Unit = {}
@@ -216,8 +217,7 @@ fun OttVideoPlayer(
                         if (errorState.reason == "SUBSCRIPTION_REQUIRED") {
                             OttButton(text = "Subscribe Now", onClick = onGoToSubscription)
                         } else if (errorState.reason == "UNAUTHENTICATED") {
-                            // Let the UI handle navigation to login if needed, or provide a retry
-                            OttButton(text = "Retry", onClick = onRetry)
+                            OttButton(text = "Sign In to Watch", onClick = onGoToLogin)
                         } else {
                             OttButton(text = "Retry", onClick = onRetry)
                         }

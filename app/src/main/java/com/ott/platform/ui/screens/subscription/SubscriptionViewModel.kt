@@ -3,9 +3,11 @@ package com.ott.platform.ui.screens.subscription
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ott.platform.core.payment.PaymentGateway
+import com.ott.platform.core.session.SessionManager
 import com.ott.platform.data.model.Plan
 import com.ott.platform.data.model.Subscription
 import com.ott.platform.data.model.SubscriptionStatus
+import com.ott.platform.data.model.User
 import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.SubscriptionRepository
 import com.ott.platform.data.repository.UserRepository
@@ -36,7 +38,8 @@ class SubscriptionViewModel @Inject constructor(
     private val subscriptionRepository: SubscriptionRepository,
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
-    private val paymentGateway: PaymentGateway
+    private val paymentGateway: PaymentGateway,
+    private val sessionManager: SessionManager? = null
 ) : ViewModel() {
 
     private val _subscriptionState = MutableStateFlow<SubscriptionState>(SubscriptionState.Initial)
@@ -55,20 +58,26 @@ class SubscriptionViewModel @Inject constructor(
 
     private fun loadSubscription() {
         viewModelScope.launch {
+            val sessionUser = sessionManager?.getSessionUser()
             val firebaseUser = authRepository.currentUser.firstOrNull()
-            if (firebaseUser == null) {
-                _subscriptionState.value = SubscriptionState.Error("User not authenticated")
-                return@launch
+
+            val effectiveUser: User? = when {
+                sessionUser != null -> sessionUser
+                firebaseUser != null -> userRepository.observeUser(firebaseUser.uid).firstOrNull()
+                else -> {
+                    val uid = authRepository.getCurrentUserId()
+                    if (!uid.isNullOrBlank()) userRepository.observeUser(uid).firstOrNull() else null
+                }
             }
-            val user = userRepository.observeUser(firebaseUser.uid).firstOrNull()
-            if (user == null) {
-                _subscriptionState.value = SubscriptionState.Error("User profile not found")
+
+            if (effectiveUser == null) {
+                _subscriptionState.value = SubscriptionState.Error("User not authenticated")
                 return@launch
             }
 
             _subscriptionState.value = SubscriptionState.Loading
 
-            subscriptionRepository.observeSubscription(user.id, user.tenantId).collectLatest { subscription ->
+            subscriptionRepository.observeSubscription(effectiveUser.id, effectiveUser.tenantId).collectLatest { subscription ->
                 if (subscription == null) {
                     _subscriptionState.value = SubscriptionState.Inactive
                 } else {

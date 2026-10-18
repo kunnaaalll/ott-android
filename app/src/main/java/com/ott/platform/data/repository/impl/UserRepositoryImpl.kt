@@ -2,6 +2,7 @@ package com.ott.platform.data.repository.impl
 
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.ott.platform.core.session.SessionManager
 import com.ott.platform.data.model.User
 import com.ott.platform.data.repository.UserRepository
 import kotlinx.coroutines.channels.awaitClose
@@ -14,41 +15,68 @@ import javax.inject.Singleton
 @Singleton
 class UserRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
+    private val sessionManager: SessionManager,
 ) : UserRepository {
 
     private val usersCollection = firestore.collection("users")
 
     override fun observeUser(uid: String): Flow<User?> = callbackFlow {
-        val listener = usersCollection.document(uid)
+        // Emit cached session user immediately for zero-latency UI consistency
+        val cached = sessionManager.getSessionUser()
+        if (cached != null && (cached.id == uid || uid.isBlank())) {
+            trySend(cached)
+        }
+
+        val effectiveUid = if (uid.isNotBlank()) uid else cached?.id ?: ""
+        if (effectiveUid.isBlank()) {
+            trySend(null)
+            awaitClose { }
+            return@callbackFlow
+        }
+
+        val listener = usersCollection.document(effectiveUid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    val fallback = sessionManager.getSessionUser()
+                    if (fallback != null && (fallback.id == effectiveUid || effectiveUid.isBlank())) {
+                        trySend(fallback)
+                    } else {
+                        close(error)
+                    }
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.toObject(User::class.java))
+                val remoteUser = snapshot?.toObject(User::class.java)
+                trySend(remoteUser ?: sessionManager.getSessionUser())
             }
         awaitClose { listener.remove() }
     }
 
     override suspend fun createOrUpdateUser(user: User) {
-        val docRef = usersCollection.document(user.id)
-        val snapshot = docRef.get().await()
-        if (snapshot.exists()) {
-            // Update existing user (e.g., photoUrl or name changes)
-            val updates = mutableMapOf<String, Any>(
-                "email" to user.email,
-                "name" to user.name,
-                "photoUrl" to user.photoUrl
-            )
-            docRef.update(updates).await()
-        } else {
-            // Create new user
-            docRef.set(user).await()
+        sessionManager.saveSession(user)
+        try {
+            val docRef = usersCollection.document(user.id)
+            val snapshot = docRef.get().await()
+            if (snapshot.exists()) {
+                val updates = mutableMapOf<String, Any>(
+                    "email" to user.email,
+                    "name" to user.name,
+                    "photoUrl" to user.photoUrl
+                )
+                docRef.update(updates).await()
+            } else {
+                docRef.set(user).await()
+            }
+        } catch (e: Exception) {
+            // Local session is saved and authoritative
         }
     }
 
     override suspend fun updateLastLogin(uid: String) {
-        usersCollection.document(uid).update("lastLoginAt", FieldValue.serverTimestamp()).await()
+        try {
+            usersCollection.document(uid).update("lastLoginAt", FieldValue.serverTimestamp()).await()
+        } catch (e: Exception) {
+            // Ignored if offline
+        }
     }
 
     // ── My List ────────────────────────────────────────────────────
@@ -56,10 +84,16 @@ class UserRepositoryImpl @Inject constructor(
     private fun myListCollection(uid: String) = usersCollection.document(uid).collection("myList")
 
     override fun observeMyList(uid: String): Flow<List<String>> = callbackFlow {
+        if (uid.isBlank()) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+
         val listener = myListCollection(uid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 val contentIds = snapshot?.documents?.map { it.id } ?: emptyList()
@@ -69,18 +103,30 @@ class UserRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addToMyList(uid: String, contentId: String) {
-        val data = hashMapOf(
-            "addedAt" to FieldValue.serverTimestamp()
-        )
-        myListCollection(uid).document(contentId).set(data).await()
+        try {
+            val data = hashMapOf(
+                "addedAt" to FieldValue.serverTimestamp()
+            )
+            myListCollection(uid).document(contentId).set(data).await()
+        } catch (e: Exception) {
+            // Ignored
+        }
     }
 
     override suspend fun removeFromMyList(uid: String, contentId: String) {
-        myListCollection(uid).document(contentId).delete().await()
+        try {
+            myListCollection(uid).document(contentId).delete().await()
+        } catch (e: Exception) {
+            // Ignored
+        }
     }
 
     override suspend fun isInMyList(uid: String, contentId: String): Boolean {
-        val snapshot = myListCollection(uid).document(contentId).get().await()
-        return snapshot.exists()
+        return try {
+            val snapshot = myListCollection(uid).document(contentId).get().await()
+            snapshot.exists()
+        } catch (e: Exception) {
+            false
+        }
     }
 }

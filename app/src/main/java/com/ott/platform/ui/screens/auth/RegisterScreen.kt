@@ -31,6 +31,8 @@ fun RegisterScreen(
     viewModel: AuthViewModel = hiltViewModel()
 ) {
     val spacing = LocalSpacing.current
+    var name by remember { mutableStateOf("") }
+    var mobile by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -59,8 +61,26 @@ fun RegisterScreen(
             fontWeight = FontWeight.Bold,
         )
         
-        Spacer(modifier = Modifier.height(spacing.xxl))
+        Spacer(modifier = Modifier.height(spacing.xl))
         
+        OttTextField(
+            value = name,
+            onValueChange = { name = it },
+            placeholder = "Full Name",
+            keyboardType = KeyboardType.Text,
+        )
+        
+        Spacer(modifier = Modifier.height(spacing.sm))
+        
+        OttTextField(
+            value = mobile,
+            onValueChange = { mobile = it.filter { ch -> ch.isDigit() }.take(10) },
+            placeholder = "10-digit Mobile Number",
+            keyboardType = KeyboardType.Phone,
+        )
+        
+        Spacer(modifier = Modifier.height(spacing.sm))
+
         OttTextField(
             value = email,
             onValueChange = { email = it },
@@ -68,17 +88,17 @@ fun RegisterScreen(
             keyboardType = KeyboardType.Email,
         )
         
-        Spacer(modifier = Modifier.height(spacing.md))
+        Spacer(modifier = Modifier.height(spacing.sm))
         
         OttTextField(
             value = password,
             onValueChange = { password = it },
-            placeholder = "Password",
+            placeholder = "Password (min. 6 characters)",
             keyboardType = KeyboardType.Password,
             visualTransformation = PasswordVisualTransformation(),
         )
         
-        Spacer(modifier = Modifier.height(spacing.md))
+        Spacer(modifier = Modifier.height(spacing.sm))
         
         OttTextField(
             value = confirmPassword,
@@ -88,7 +108,7 @@ fun RegisterScreen(
             visualTransformation = PasswordVisualTransformation(),
         )
         
-        Spacer(modifier = Modifier.height(spacing.xl))
+        Spacer(modifier = Modifier.height(spacing.lg))
         
         if (validationError != null) {
             Text(
@@ -110,14 +130,18 @@ fun RegisterScreen(
             text = "Sign Up",
             onClick = {
                 validationError = null
-                if (password != confirmPassword) {
-                    validationError = "Passwords do not match."
-                } else {
-                    viewModel.register(email, password)
+                val cleanMobile = mobile.filter { it.isDigit() }
+                when {
+                    name.isBlank() -> validationError = "Please enter your full name."
+                    cleanMobile.length != 10 -> validationError = "Please enter a valid 10-digit mobile number."
+                    !email.contains("@") -> validationError = "Please enter a valid email address."
+                    password.length < 6 -> validationError = "Password must be at least 6 characters long."
+                    password != confirmPassword -> validationError = "Passwords do not match."
+                    else -> viewModel.register(name, email, cleanMobile, password)
                 }
             },
             isLoading = isLoading,
-            enabled = email.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank() && !isLoading
+            enabled = name.isNotBlank() && mobile.isNotBlank() && email.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank() && !isLoading
         )
         
         Spacer(modifier = Modifier.weight(1f))

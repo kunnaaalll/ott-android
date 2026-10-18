@@ -41,6 +41,8 @@ fun ContentDetailScreen(
     onNavigateBack: () -> Unit,
     onNavigateToPlayer: (String) -> Unit, // Unused as we have inline player, but kept for signature
     onNavigateToContent: (String) -> Unit,
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToSubscription: () -> Unit = {},
     playbackViewModel: PlaybackViewModel = hiltViewModel(),
     detailViewModel: ContentDetailViewModel = hiltViewModel()
 ) {
@@ -97,7 +99,8 @@ fun ContentDetailScreen(
                     cookies = cookies,
                     onStateChanged = playbackViewModel::updateState,
                     onRetry = playbackViewModel::retry,
-                    onGoToSubscription = { /* Navigate to sub */ },
+                    onGoToSubscription = onNavigateToSubscription,
+                    onGoToLogin = onNavigateToLogin,
                     isFullscreen = true,
                     onFullscreenToggle = { isFullscreen = false },
                     modifier = Modifier.fillMaxSize()
@@ -115,7 +118,8 @@ fun ContentDetailScreen(
                         cookies = cookies,
                         onStateChanged = playbackViewModel::updateState,
                         onRetry = playbackViewModel::retry,
-                        onGoToSubscription = { /* Navigate to sub */ },
+                        onGoToSubscription = onNavigateToSubscription,
+                        onGoToLogin = onNavigateToLogin,
                         isFullscreen = false,
                         onFullscreenToggle = { isFullscreen = true },
                         modifier = Modifier.fillMaxSize()

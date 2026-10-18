@@ -35,8 +35,11 @@ class SubscriptionRepositoryImplTest {
         collectionReference = mockk(relaxed = true)
         query = mockk(relaxed = true)
         querySnapshot = mockk(relaxed = true)
+        val documentReference = mockk<com.google.firebase.firestore.DocumentReference>(relaxed = true)
         
         every { firestore.collection(any()) } returns collectionReference
+        every { collectionReference.document(any()) } returns documentReference
+        every { documentReference.set(any()) } returns Tasks.forResult(null)
         every { collectionReference.whereEqualTo(any<String>(), any()) } returns query
         every { query.whereEqualTo(any<String>(), any()) } returns query
         

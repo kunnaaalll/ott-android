@@ -2,6 +2,7 @@ package com.ott.platform.ui.screens.content
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.PlaybackAuthorizationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,7 +13,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
-    private val playbackAuthorizationRepository: PlaybackAuthorizationRepository
+    private val playbackAuthorizationRepository: PlaybackAuthorizationRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _playbackState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
@@ -35,6 +37,18 @@ class PlaybackViewModel @Inject constructor(
         seriesId: String? = null,
         seasonId: String? = null
     ) {
+        // Enforce: Without logging in, streaming cannot happen
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId.isNullOrBlank()) {
+            _playbackState.value = PlaybackState.Error(
+                message = "Please sign in to continue.",
+                reason = "UNAUTHENTICATED"
+            )
+            _playbackUrl.value = null
+            _cookies.value = emptyMap()
+            return
+        }
+
         val isSameRequest = contentId == currentContentId &&
                 isTrailer == currentIsTrailer &&
                 seriesId == currentSeriesId &&

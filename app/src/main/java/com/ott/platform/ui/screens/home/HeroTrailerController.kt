@@ -2,6 +2,7 @@ package com.ott.platform.ui.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.PlaybackAuthorizationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -14,7 +15,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class HeroTrailerController @Inject constructor(
-    private val playbackAuthorizationRepository: PlaybackAuthorizationRepository
+    private val playbackAuthorizationRepository: PlaybackAuthorizationRepository,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _playbackUrl = MutableStateFlow<String?>(null)
@@ -30,6 +32,13 @@ class HeroTrailerController @Inject constructor(
     private var authorizationJob: Job? = null
 
     fun onHeroActive(contentId: String) {
+        val currentUserId = authRepository.getCurrentUserId()
+        if (currentUserId.isNullOrBlank()) {
+            _playbackUrl.value = null
+            _cookies.value = emptyMap()
+            return
+        }
+
         if (contentId == currentActiveContentId) return
         
         currentActiveContentId = contentId

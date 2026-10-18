@@ -117,6 +117,9 @@ fun MainNavGraph(
                 },
                 onSignOut = {
                     authViewModel.logout()
+                },
+                onNavigateToSubscription = {
+                    navController.navigate(Screen.Subscription.route)
                 }
             )
         }
@@ -131,6 +134,12 @@ fun MainNavGraph(
                 },
                 onNavigateToContent = { id ->
                     navController.navigate(Screen.ContentDetail.createRoute(id))
+                },
+                onNavigateToLogin = {
+                    navController.navigate(Screen.Login.route)
+                },
+                onNavigateToSubscription = {
+                    navController.navigate(Screen.Subscription.route)
                 }
             )
         }

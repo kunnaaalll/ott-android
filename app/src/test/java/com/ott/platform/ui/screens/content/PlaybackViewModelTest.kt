@@ -2,8 +2,11 @@ package com.ott.platform.ui.screens.content
 
 import app.cash.turbine.test
 import com.ott.platform.data.model.PlaybackAuthorization
+import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.PlaybackAuthorizationRepository
 import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,6 +23,7 @@ import org.junit.Test
 class PlaybackViewModelTest {
 
     private lateinit var repository: PlaybackAuthorizationRepository
+    private lateinit var authRepository: AuthRepository
     private lateinit var viewModel: PlaybackViewModel
     private val testDispatcher = StandardTestDispatcher()
 
@@ -27,12 +31,31 @@ class PlaybackViewModelTest {
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         repository = mockk()
-        viewModel = PlaybackViewModel(repository)
+        authRepository = mockk()
+        every { authRepository.getCurrentUserId() } returns "user-123"
+        viewModel = PlaybackViewModel(repository, authRepository)
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    // ── Gating & Auth ─────────────────────────────────────────────────────────
+
+    @Test
+    fun `authorizeAndPlay when unauthenticated updates state to Error and does not call repository`() = runTest {
+        every { authRepository.getCurrentUserId() } returns null
+
+        viewModel.playbackState.test {
+            assertEquals(PlaybackState.Idle, awaitItem())
+            viewModel.authorizeAndPlay("content-123")
+            val errorState = awaitItem() as PlaybackState.Error
+            assertEquals("Please sign in to continue.", errorState.message)
+            assertEquals("UNAUTHENTICATED", errorState.reason)
+        }
+
+        coVerify(exactly = 0) { repository.authorizePlayback(any(), any(), any(), any()) }
     }
 
     // ── Happy Path ────────────────────────────────────────────────────────────
@@ -44,7 +67,7 @@ class PlaybackViewModelTest {
             "CloudFront-Signature" to "sig123",
             "CloudFront-Key-Pair-Id" to "key123"
         )
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.success(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.success(
             PlaybackAuthorization(
                 authorized = true,
                 playbackUrl = "https://d12345.cloudfront.net/content/t1/content-123/main/hls/master.m3u8",
@@ -72,7 +95,7 @@ class PlaybackViewModelTest {
 
     @Test
     fun `authorizeAndPlay subscription required updates state to Error`() = runTest {
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.failure(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.failure(
             Exception("SUBSCRIPTION_REQUIRED")
         )
 
@@ -87,8 +110,8 @@ class PlaybackViewModelTest {
     }
 
     @Test
-    fun `authorizeAndPlay unauthenticated updates state to Error with correct message`() = runTest {
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.failure(
+    fun `authorizeAndPlay unauthenticated backend response updates state to Error with correct message`() = runTest {
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.failure(
             Exception("UNAUTHENTICATED")
         )
 
@@ -103,7 +126,7 @@ class PlaybackViewModelTest {
 
     @Test
     fun `authorizeAndPlay content unavailable shows generic message`() = runTest {
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.failure(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.failure(
             Exception("CONTENT_UNAVAILABLE")
         )
 
@@ -121,7 +144,7 @@ class PlaybackViewModelTest {
     @Test
     fun `second call to authorizeAndPlay for same contentId is a no-op when not in error`() = runTest {
         var callCount = 0
-        coEvery { repository.authorizePlayback("content-123", any()) } coAnswers {
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } coAnswers {
             callCount++
             Result.success(PlaybackAuthorization(true, "url", 0L))
         }
@@ -143,7 +166,7 @@ class PlaybackViewModelTest {
 
     @Test
     fun `clear resets all state and credentials`() = runTest {
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.success(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.success(
             PlaybackAuthorization(
                 authorized = true,
                 playbackUrl = "https://d12345.cloudfront.net/content/t1/content-123/main/hls/master.m3u8",
@@ -171,7 +194,7 @@ class PlaybackViewModelTest {
     @Test
     fun `retry re-authorizes after error`() = runTest {
         var callCount = 0
-        coEvery { repository.authorizePlayback("content-123", any()) } coAnswers {
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } coAnswers {
             callCount++
             if (callCount == 1) {
                 Result.failure(Exception("SERVER_ERROR"))
@@ -198,10 +221,10 @@ class PlaybackViewModelTest {
     fun `stale authorization response for previous content is discarded`() = runTest {
         // This simulates a race condition: user navigates to content-123, then quickly
         // navigates to content-456 before the first response arrives.
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.success(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.success(
             PlaybackAuthorization(true, "url-for-123", 0L)
         )
-        coEvery { repository.authorizePlayback("content-456", any()) } returns Result.success(
+        coEvery { repository.authorizePlayback("content-456", any(), any(), any()) } returns Result.success(
             PlaybackAuthorization(true, "url-for-456", 0L)
         )
 
@@ -230,7 +253,7 @@ class PlaybackViewModelTest {
             "CloudFront-Signature" to "sig123",
             "CloudFront-Key-Pair-Id" to "key123"
         )
-        coEvery { repository.authorizePlayback("content-123", any()) } returns Result.success(
+        coEvery { repository.authorizePlayback("content-123", any(), any(), any()) } returns Result.success(
             PlaybackAuthorization(true, "https://d.cloudfront.net/content/t1/c1/main/hls/master.m3u8", 0L, testCookies)
         )
 

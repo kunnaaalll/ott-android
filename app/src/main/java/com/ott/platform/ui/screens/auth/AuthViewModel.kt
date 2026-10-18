@@ -64,6 +64,34 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun register(name: String, email: String, mobile: String, pass: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            analyticsTracker.logEvent("registration_started")
+            val result = authRepository.register(name, email, mobile, pass)
+            if (result.isSuccess) {
+                val user = result.getOrNull()
+                user?.let {
+                    val newUser = User(
+                        id = it.uid,
+                        email = it.email ?: email,
+                        name = it.displayName?.ifBlank { name } ?: name,
+                        photoUrl = it.photoUrl?.toString() ?: ""
+                    )
+                    userRepository.createOrUpdateUser(newUser)
+                    analyticsTracker.setUserId(it.uid)
+                    crashReporter.setUserId(it.uid)
+                }
+                analyticsTracker.logEvent("registration_success")
+            } else {
+                val exception = result.exceptionOrNull()
+                exception?.let { crashReporter.logException(it) }
+                analyticsTracker.logEvent("registration_failed")
+                _authState.value = AuthState.Error(mapAuthError(exception))
+            }
+        }
+    }
+
     fun register(email: String, pass: String) {
         viewModelScope.launch {
             _authState.value = AuthState.Loading

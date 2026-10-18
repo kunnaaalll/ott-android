@@ -1,10 +1,17 @@
 package com.ott.platform.data.repository.impl
 
 import com.google.android.gms.tasks.Tasks
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.functions.FirebaseFunctionsException
 import com.google.firebase.functions.HttpsCallableReference
 import com.google.firebase.functions.HttpsCallableResult
+import com.ott.platform.core.api.WebsiteApiClient
+import com.ott.platform.core.session.SessionManager
+import com.ott.platform.data.model.PlaybackAuthorization
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
@@ -12,24 +19,93 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito
 
 class PlaybackAuthorizationRepositoryImplTest {
 
     private lateinit var functions: FirebaseFunctions
     private lateinit var callableReference: HttpsCallableReference
+    private lateinit var websiteApiClient: WebsiteApiClient
+    private lateinit var sessionManager: SessionManager
+    private lateinit var auth: FirebaseAuth
+    private lateinit var mockUser: FirebaseUser
     private lateinit var repository: PlaybackAuthorizationRepositoryImpl
 
     @Before
     fun setup() {
         functions = mockk()
         callableReference = mockk()
+        websiteApiClient = mockk()
+        sessionManager = mockk()
+        auth = mockk()
+        mockUser = mockk { every { uid } returns "test-uid" }
+
         every { functions.getHttpsCallable("authorizePlayback") } returns callableReference
-        repository = PlaybackAuthorizationRepositoryImpl(functions)
+        every { auth.currentUser } returns mockUser
+        every { sessionManager.getUserId() } returns "test-uid"
+        // By default, let websiteApiClient fail with generic error so tests fall through to functions
+        coEvery { websiteApiClient.authorizePlayback(any(), any(), any(), any(), any()) } returns Result.failure(Exception("FALLBACK"))
+
+        repository = PlaybackAuthorizationRepositoryImpl(functions, websiteApiClient, sessionManager, auth)
     }
 
     @Test
-    fun `authorizePlayback success`() = runBlocking {
+    fun `authorizePlayback when unauthenticated immediately returns UNAUTHENTICATED`() = runBlocking {
+        every { auth.currentUser } returns null
+        every { sessionManager.getUserId() } returns null
+
+        val result = repository.authorizePlayback("content-123")
+
+        assertTrue(result.isFailure)
+        assertEquals("UNAUTHENTICATED", result.exceptionOrNull()?.message)
+        coVerify(exactly = 0) { websiteApiClient.authorizePlayback(any(), any(), any(), any(), any()) }
+        io.mockk.verify(exactly = 0) { functions.getHttpsCallable(any()) }
+    }
+
+    @Test
+    fun `authorizePlayback website API success returns authorization without functions fallback`() = runBlocking {
+        val testAuth = PlaybackAuthorization(
+            authorized = true,
+            playbackUrl = "https://s3.in-west2.purestore.io/chumbak/content-123/master.m3u8",
+            expiresAt = 9999999L
+        )
+        coEvery {
+            websiteApiClient.authorizePlayback(
+                userId = "test-uid",
+                contentId = "content-123",
+                isTrailer = false,
+                seriesId = null,
+                seasonId = null
+            )
+        } returns Result.success(testAuth)
+
+        val result = repository.authorizePlayback("content-123")
+
+        assertTrue(result.isSuccess)
+        assertEquals(testAuth.playbackUrl, result.getOrNull()?.playbackUrl)
+        io.mockk.verify(exactly = 0) { functions.getHttpsCallable(any()) }
+    }
+
+    @Test
+    fun `authorizePlayback website API subscription required returns immediately without functions fallback`() = runBlocking {
+        coEvery {
+            websiteApiClient.authorizePlayback(
+                userId = "test-uid",
+                contentId = "content-123",
+                isTrailer = false,
+                seriesId = null,
+                seasonId = null
+            )
+        } returns Result.failure(Exception("SUBSCRIPTION_REQUIRED"))
+
+        val result = repository.authorizePlayback("content-123")
+
+        assertTrue(result.isFailure)
+        assertEquals("SUBSCRIPTION_REQUIRED", result.exceptionOrNull()?.message)
+        io.mockk.verify(exactly = 0) { functions.getHttpsCallable(any()) }
+    }
+
+    @Test
+    fun `authorizePlayback functions fallback success`() = runBlocking {
         val mockData = mapOf(
             "authorized" to true,
             "playbackUrl" to "https://cdn.example.com/hls/master.m3u8",
