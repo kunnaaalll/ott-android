@@ -148,6 +148,98 @@ class WebsiteApiClient @Inject constructor(
         }
     }
 
+    suspend fun sendOtp(mobile: String): Result<String> = withContext(Dispatchers.IO) {
+        val cleanMobile = mobile.replace(Regex("[^0-9]"), "").takeLast(10)
+        if (cleanMobile.length != 10) {
+            return@withContext Result.failure(Exception("Please enter a valid 10-digit mobile number."))
+        }
+
+        try {
+            val url = URL("$baseUrl/api/auth/send-otp")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+            }
+
+            val body = JSONObject().apply {
+                put("mobile", cleanMobile)
+            }
+
+            OutputStreamWriter(conn.outputStream, "UTF-8").use {
+                it.write(body.toString())
+                it.flush()
+            }
+
+            val responseCode = conn.responseCode
+            val stream = if (responseCode in 200..299) conn.inputStream else conn.errorStream
+            val responseText = BufferedReader(InputStreamReader(stream, "UTF-8")).use { it.readText() }
+            val json = JSONObject(responseText)
+
+            if (responseCode in 200..299 && json.optBoolean("success", false)) {
+                Result.success(json.optString("message", "OTP sent successfully to your mobile number."))
+            } else {
+                val err = json.optString("message", "Failed to send OTP.")
+                Result.failure(Exception(err))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun verifyOtp(mobile: String, otp: String): Result<WebsiteAuthResult> = withContext(Dispatchers.IO) {
+        val cleanMobile = mobile.replace(Regex("[^0-9]"), "").takeLast(10)
+        val cleanOtp = otp.trim()
+        if (cleanMobile.length != 10) {
+            return@withContext Result.failure(Exception("Please enter a valid 10-digit mobile number."))
+        }
+        if (cleanOtp.length != 6) {
+            return@withContext Result.failure(Exception("Please enter the 6-digit OTP code."))
+        }
+
+        try {
+            val url = URL("$baseUrl/api/auth/verify-otp")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+            }
+
+            val body = JSONObject().apply {
+                put("mobile", cleanMobile)
+                put("otp", cleanOtp)
+            }
+
+            OutputStreamWriter(conn.outputStream, "UTF-8").use {
+                it.write(body.toString())
+                it.flush()
+            }
+
+            val responseCode = conn.responseCode
+            val stream = if (responseCode in 200..299) conn.inputStream else conn.errorStream
+            val responseText = BufferedReader(InputStreamReader(stream, "UTF-8")).use { it.readText() }
+            val json = JSONObject(responseText)
+
+            if (responseCode in 200..299 && json.optBoolean("success", false)) {
+                val userJson = json.getJSONObject("user")
+                val parsedUser = parseUser(userJson)
+                val parsedSub = parseSubscription(userJson.optJSONObject("subscription"), parsedUser.id, parsedUser.tenantId)
+                Result.success(WebsiteAuthResult(parsedUser, parsedSub))
+            } else {
+                val err = json.optString("message", "Invalid OTP.")
+                Result.failure(Exception(err))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun fetchCatalog(platform: String = "ANDROID", tenantId: String = "tenant_chumbak"): Result<List<Content>> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$baseUrl/api/content?platform=$platform&tenantId=$tenantId")
@@ -363,7 +455,15 @@ class WebsiteApiClient @Inject constructor(
         val statusStr = json.optString("status", "PUBLISHED")
         val posterUrl = json.optString("posterUrl", "")
         val backdropUrl = json.optString("backdropUrl", "")
-        val duration = json.optLong("duration", 7200L)
+        val rawDuration = json.optLong("duration", 0L)
+        // If duration is 7200L (backend placeholder) or zero for Bhullakad Pati, use real length 1264L (21m)
+        val duration = if ((rawDuration == 7200L || rawDuration <= 0L) && (id.contains("1792312348739") || title.contains("Bhullakad", ignoreCase = true))) {
+            1264L
+        } else if (rawDuration > 0L) {
+            rawDuration
+        } else {
+            1264L
+        }
         val releaseDate = json.optString("releaseDate", "")
         val featured = json.optBoolean("featured", false)
 
@@ -371,7 +471,7 @@ class WebsiteApiClient @Inject constructor(
         val mainAsset = if (mainAssetJson != null) {
             VideoAsset(
                 hlsPath = mainAssetJson.optString("hlsPath", ""),
-                duration = mainAssetJson.optLong("duration", duration)
+                duration = if (duration > 0) duration else mainAssetJson.optLong("duration", 1264L)
             )
         } else null
 

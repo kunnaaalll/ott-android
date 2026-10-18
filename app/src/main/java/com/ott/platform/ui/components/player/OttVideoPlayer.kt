@@ -128,8 +128,11 @@ fun OttVideoPlayer(
                 return@LaunchedEffect
             }
 
-            // Only accept exactly configured hostnames
-            val isCloudFrontHost = (host == configuredHost)
+            // Only accept exactly configured hostnames, purestore media storage, or reviewer demo host
+            val isCloudFrontHost = (host == configuredHost) ||
+                    host == "s3.in-west2.purestore.io" ||
+                    host.endsWith(".purestore.io") ||
+                    host == "test-streams.mux.dev"
             if (!isCloudFrontHost) {
                 // Do not attach cookies to non-CloudFront hosts.
                 // Log without the URL to avoid leaking it.

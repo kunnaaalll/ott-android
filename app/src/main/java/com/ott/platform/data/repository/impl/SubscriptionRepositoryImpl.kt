@@ -37,7 +37,7 @@ class SubscriptionRepositoryImpl @Inject constructor(
                     if (fallback != null && fallback.userId == userId) {
                         trySend(fallback)
                     } else {
-                        close(error)
+                        trySend(null)
                     }
                     return@addSnapshotListener
                 }
@@ -95,8 +95,10 @@ class SubscriptionRepositoryImpl @Inject constructor(
     override suspend fun recordActiveSubscription(subscription: Subscription) {
         localActiveSubscription.value = subscription
         try {
-            val docId = if (subscription.id.isNotBlank()) subscription.id else "sub_${subscription.userId}"
-            firestore.collection("subscriptions").document(docId).set(subscription).await()
+            kotlinx.coroutines.withTimeoutOrNull(1200L) {
+                val docId = if (subscription.id.isNotBlank()) subscription.id else "sub_${subscription.userId}"
+                firestore.collection("subscriptions").document(docId).set(subscription).await()
+            }
         } catch (e: Exception) {
             // Firestore write may be restricted by security rules for client-side direct writes
             // The localActiveSubscription in-memory state remains authoritative for the session

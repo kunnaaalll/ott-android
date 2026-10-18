@@ -23,7 +23,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Tenant configuration — swap per white-label build
-        buildConfigField("String", "TENANT_ID", "\"default-tenant\"")
+        buildConfigField("String", "TENANT_ID", "\"tenant_chumbak\"")
         buildConfigField("String", "APP_NAME", "\"Chumbak OTT\"")
         // CloudFront hostname configuration required for secure playback validation.
         // MUST be overridden with the actual production hostname.
@@ -36,11 +36,13 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             // For debug and local development, provide a development hostname to prevent MISSING_CONFIG crash
-            buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"d111111abcdef8.cloudfront.net\"")
+            buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"s3.in-west2.purestore.io\"")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("String", "CLOUDFRONT_HOSTNAME", "\"s3.in-west2.purestore.io\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

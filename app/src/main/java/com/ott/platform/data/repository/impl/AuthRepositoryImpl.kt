@@ -63,7 +63,7 @@ class AuthRepositoryImpl @Inject constructor(
                 }
             }
 
-            // If Firebase user is available, return it; otherwise anonymous sign-in or return existing user
+            // If Firebase user is available, return it; otherwise return website auth success indicator
             val currentFb = auth.currentUser
             if (currentFb != null) {
                 return Result.success(currentFb)
@@ -72,30 +72,38 @@ class AuthRepositoryImpl @Inject constructor(
                 val anonResult = auth.signInAnonymously().await()
                 anonResult.user?.let { return Result.success(it) }
             } catch (e: Exception) {
-                // Return success if sessionManager is authenticated
+                // Ignore anonymous auth failure
             }
+
+            // Return custom marker for website authenticated session
+            return Result.failure(Exception("WEBSITE_AUTH_SUCCESS"))
         }
 
-        // 2. Direct Firebase Auth fallback
-        return try {
-            val result = auth.signInWithEmailAndPassword(email, password).await()
-            val user = result.user ?: throw Exception("Login failed: User is null")
-            sessionManager.saveSession(
-                User(
-                    id = user.uid,
-                    email = user.email ?: email,
-                    name = user.displayName ?: "",
-                    tenantId = "tenant_chumbak"
+        // 2. Direct Firebase Auth fallback only if identifier contains '@'
+        if (trimmedIdentifier.contains("@")) {
+            return try {
+                val result = auth.signInWithEmailAndPassword(email, password).await()
+                val user = result.user ?: throw Exception("Login failed: User is null")
+                sessionManager.saveSession(
+                    User(
+                        id = user.uid,
+                        email = user.email ?: email,
+                        name = user.displayName ?: "",
+                        tenantId = "tenant_chumbak"
+                    )
                 )
-            )
-            Result.success(user)
-        } catch (e: Exception) {
-            if (sessionManager.isLoggedIn()) {
-                val fb = auth.currentUser
-                if (fb != null) Result.success(fb) else Result.failure(e)
-            } else {
-                Result.failure(e)
+                Result.success(user)
+            } catch (e: Exception) {
+                val websiteError = websiteResult.exceptionOrNull()?.message
+                if (!websiteError.isNullOrBlank()) {
+                    Result.failure(Exception(websiteError))
+                } else {
+                    Result.failure(e)
+                }
             }
+        } else {
+            val websiteError = websiteResult.exceptionOrNull()?.message ?: "Invalid credentials"
+            return Result.failure(Exception(websiteError))
         }
     }
 
@@ -156,6 +164,25 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun sendOtp(mobile: String): Result<String> {
+        return websiteApiClient.sendOtp(mobile)
+    }
+
+    override suspend fun verifyOtp(mobile: String, otp: String): Result<User> {
+        val result = websiteApiClient.verifyOtp(mobile, otp)
+        if (result.isSuccess) {
+            val authData = result.getOrThrow()
+            val user = authData.user
+            sessionManager.saveSession(user)
+            userRepository.createOrUpdateUser(user)
+            if (authData.subscription != null) {
+                subscriptionRepository.recordActiveSubscription(authData.subscription)
+            }
+            return Result.success(user)
+        }
+        return Result.failure(result.exceptionOrNull() ?: Exception("Failed to verify OTP"))
     }
 
     override suspend fun signOut() {

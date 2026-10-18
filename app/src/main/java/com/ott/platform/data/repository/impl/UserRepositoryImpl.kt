@@ -54,17 +54,19 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun createOrUpdateUser(user: User) {
         sessionManager.saveSession(user)
         try {
-            val docRef = usersCollection.document(user.id)
-            val snapshot = docRef.get().await()
-            if (snapshot.exists()) {
-                val updates = mutableMapOf<String, Any>(
-                    "email" to user.email,
-                    "name" to user.name,
-                    "photoUrl" to user.photoUrl
-                )
-                docRef.update(updates).await()
-            } else {
-                docRef.set(user).await()
+            kotlinx.coroutines.withTimeoutOrNull(1200L) {
+                val docRef = usersCollection.document(user.id)
+                val snapshot = docRef.get().await()
+                if (snapshot.exists()) {
+                    val updates = mutableMapOf<String, Any>(
+                        "email" to user.email,
+                        "name" to user.name,
+                        "photoUrl" to user.photoUrl
+                    )
+                    docRef.update(updates).await()
+                } else {
+                    docRef.set(user).await()
+                }
             }
         } catch (e: Exception) {
             // Local session is saved and authoritative
@@ -73,7 +75,9 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun updateLastLogin(uid: String) {
         try {
-            usersCollection.document(uid).update("lastLoginAt", FieldValue.serverTimestamp()).await()
+            kotlinx.coroutines.withTimeoutOrNull(1200L) {
+                usersCollection.document(uid).update("lastLoginAt", FieldValue.serverTimestamp()).await()
+            }
         } catch (e: Exception) {
             // Ignored if offline
         }

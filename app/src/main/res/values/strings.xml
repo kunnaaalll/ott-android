@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Chumbak OTT</string>
     <string name="default_web_client_id">YOUR_CLIENT_ID_HERE</string>
+    <string name="com.google.firebase.crashlytics.mapping_file_id">none</string>
+    <string name="com.crashlytics.android.build_id">1</string>
 </resources>

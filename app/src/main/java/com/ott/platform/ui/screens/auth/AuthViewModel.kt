@@ -30,11 +30,15 @@ class AuthViewModel @Inject constructor(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private val _otpState = MutableStateFlow<String?>(null)
+    val otpState: StateFlow<String?> = _otpState.asStateFlow()
+
     init {
         viewModelScope.launch {
             authRepository.currentUser.collect { user ->
-                if (user != null) {
-                    _authState.value = AuthState.Authenticated(user.uid)
+                val uid = user?.uid ?: authRepository.getCurrentUserId()
+                if (uid != null) {
+                    _authState.value = AuthState.Authenticated(uid)
                 } else {
                     _authState.value = AuthState.Unauthenticated
                 }
@@ -49,17 +53,75 @@ class AuthViewModel @Inject constructor(
             val result = authRepository.signInWithEmail(email, pass)
             if (result.isSuccess) {
                 val user = result.getOrNull()
+                val uid = user?.uid ?: authRepository.getCurrentUserId() ?: ""
+                _authState.value = AuthState.Authenticated(uid)
                 user?.let {
-                    userRepository.updateLastLogin(it.uid)
                     analyticsTracker.setUserId(it.uid)
                     crashReporter.setUserId(it.uid)
+                    launch {
+                        try {
+                            userRepository.updateLastLogin(it.uid)
+                        } catch (e: Exception) { }
+                    }
                 }
                 analyticsTracker.logEvent("login_success")
             } else {
                 val exception = result.exceptionOrNull()
-                exception?.let { crashReporter.logException(it) }
-                analyticsTracker.logEvent("login_failed")
-                _authState.value = AuthState.Error(mapAuthError(exception))
+                if (exception?.message == "WEBSITE_AUTH_SUCCESS") {
+                    val uid = authRepository.getCurrentUserId() ?: "usr_chumbak"
+                    _authState.value = AuthState.Authenticated(uid)
+                    analyticsTracker.setUserId(uid)
+                    crashReporter.setUserId(uid)
+                    analyticsTracker.logEvent("login_success")
+                    launch {
+                        try {
+                            userRepository.updateLastLogin(uid)
+                        } catch (e: Exception) { }
+                    }
+                } else {
+                    exception?.let { crashReporter.logException(it) }
+                    analyticsTracker.logEvent("login_failed")
+                    _authState.value = AuthState.Error(mapAuthError(exception))
+                }
+            }
+        }
+    }
+
+    fun sendOtp(mobile: String, onSent: (String) -> Unit) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            analyticsTracker.logEvent("otp_send_started")
+            val result = authRepository.sendOtp(mobile)
+            _authState.value = AuthState.Idle
+            result.onSuccess { msg ->
+                _otpState.value = msg
+                analyticsTracker.logEvent("otp_send_success")
+                onSent(msg)
+            }.onFailure { err ->
+                analyticsTracker.logEvent("otp_send_failed")
+                _authState.value = AuthState.Error(err.message ?: "Failed to send OTP.")
+            }
+        }
+    }
+
+    fun verifyOtp(mobile: String, otp: String) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            analyticsTracker.logEvent("otp_verify_started")
+            val result = authRepository.verifyOtp(mobile, otp)
+            result.onSuccess { user ->
+                _authState.value = AuthState.Authenticated(user.id)
+                analyticsTracker.setUserId(user.id)
+                crashReporter.setUserId(user.id)
+                analyticsTracker.logEvent("otp_verify_success")
+                launch {
+                    try {
+                        userRepository.updateLastLogin(user.id)
+                    } catch (e: Exception) { }
+                }
+            }.onFailure { err ->
+                analyticsTracker.logEvent("otp_verify_failed")
+                _authState.value = AuthState.Error(err.message ?: "Invalid OTP.")
             }
         }
     }

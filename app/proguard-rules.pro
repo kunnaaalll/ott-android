@@ -20,3 +20,11 @@
 
 # Keep R8 from stripping interfaces
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
+
+# Core & API models
+-keep class com.ott.platform.core.api.** { *; }
+-keep class com.ott.platform.core.session.** { *; }
+
+# Media3 ExoPlayer
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**

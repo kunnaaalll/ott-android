@@ -35,6 +35,13 @@ fun SubscriptionCheckScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2500)
+        if (subscriptionState is SubscriptionState.Loading || subscriptionState is SubscriptionState.Initial) {
+            onSubscriptionInactive()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()

@@ -74,18 +74,25 @@ class ContentRepositoryImpl @Inject constructor(
         awaitClose { listener.remove() }
     }
 
+    private fun resolveTenant(tenantId: String): String {
+        return if (tenantId.isBlank() || tenantId == "default-tenant") "tenant_chumbak" else tenantId
+    }
+
     override suspend fun searchContent(tenantId: String, query: String): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         val allContent = if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             cmsResult.getOrThrow()
         } else {
             try {
-                contentCollection
-                    .whereEqualTo("tenantId", tenantId)
-                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                    .get()
-                    .await()
-                    .toObjects(Content::class.java)
+                kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                    contentCollection
+                        .whereEqualTo("tenantId", effectiveTenant)
+                        .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                        .get()
+                        .await()
+                        .toObjects(Content::class.java)
+                } ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
@@ -99,27 +106,31 @@ class ContentRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getContentByCategory(tenantId: String, categoryId: String): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             val filtered = cmsResult.getOrThrow().filter { it.categoryIds.contains(categoryId) }
             if (filtered.isNotEmpty()) return filtered
         }
 
         return try {
-            contentCollection
-                .whereEqualTo("tenantId", tenantId)
-                .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                .whereArrayContains("categoryIds", categoryId)
-                .get()
-                .await()
-                .toObjects(Content::class.java)
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .whereArrayContains("categoryIds", categoryId)
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     override suspend fun getFeaturedContent(tenantId: String): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             val items = cmsResult.getOrThrow()
             val featured = items.filter { it.featured }
@@ -127,75 +138,86 @@ class ContentRepositoryImpl @Inject constructor(
         }
 
         return try {
-            contentCollection
-                .whereEqualTo("tenantId", tenantId)
-                .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(5)
-                .get()
-                .await()
-                .toObjects(Content::class.java)
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(5)
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     override suspend fun getNewReleases(tenantId: String, limit: Int): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             val items = cmsResult.getOrThrow()
             return items.sortedByDescending { it.releaseDate?.toDate()?.time ?: 0L }.take(limit)
         }
 
         return try {
-            contentCollection
-                .whereEqualTo("tenantId", tenantId)
-                .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                .orderBy("releaseDate", Query.Direction.DESCENDING)
-                .limit(limit.toLong())
-                .get()
-                .await()
-                .toObjects(Content::class.java)
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .orderBy("releaseDate", Query.Direction.DESCENDING)
+                    .limit(limit.toLong())
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     override suspend fun getTrendingContent(tenantId: String, limit: Int): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             return cmsResult.getOrThrow().take(limit)
         }
 
         return try {
-            contentCollection
-                .whereEqualTo("tenantId", tenantId)
-                .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                .orderBy("updatedAt", Query.Direction.DESCENDING)
-                .limit(limit.toLong())
-                .get()
-                .await()
-                .toObjects(Content::class.java)
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .orderBy("updatedAt", Query.Direction.DESCENDING)
+                    .limit(limit.toLong())
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     override suspend fun getPopularContent(tenantId: String, limit: Int): List<Content> {
-        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", tenantId)
+        val effectiveTenant = resolveTenant(tenantId)
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             return cmsResult.getOrThrow().reversed().take(limit)
         }
 
         return try {
-            contentCollection
-                .whereEqualTo("tenantId", tenantId)
-                .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                .orderBy("title", Query.Direction.ASCENDING)
-                .limit(limit.toLong())
-                .get()
-                .await()
-                .toObjects(Content::class.java)
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .orderBy("title", Query.Direction.ASCENDING)
+                    .limit(limit.toLong())
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
