@@ -1,8 +1,5 @@
 package com.ott.platform.ui.screens.auth
 
-import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -44,9 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
 import com.ott.platform.BuildConfig
 import com.ott.platform.R
 import com.ott.platform.ui.theme.*
@@ -95,21 +89,7 @@ fun LoginScreen(
         }
     }
 
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-            try {
-                val account = task.getResult(ApiException::class.java)
-                account.idToken?.let { idToken ->
-                    viewModel.signInWithGoogle(idToken)
-                }
-            } catch (e: ApiException) {
-                // Handled in viewModel
-            }
-        }
-    }
+
 
     LaunchedEffect(authState) {
         if (authState is AuthState.Authenticated) {
@@ -769,80 +749,7 @@ fun LoginScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // ── Or Divider ──
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(1.dp)
-                                .background(Color(0x22FFFFFF))
-                        )
-                        Text(
-                            text = "OR CONTINUE WITH",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = OttTextTertiary,
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(1.dp)
-                                .background(Color(0x22FFFFFF))
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // ── Google Sign-In Button ──
-                    OutlinedButton(
-                        onClick = {
-                            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                .requestIdToken(context.getString(R.string.default_web_client_id))
-                                .requestEmail()
-                                .build()
-                            val googleSignInClient = GoogleSignIn.getClient(context, gso)
-                            googleSignInLauncher.launch(googleSignInClient.signInIntent)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        enabled = !isLoading,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(0xFF1A1A1E),
-                            contentColor = Color.White
-                        ),
-                        border = BorderStroke(1.dp, Color(0x33FFFFFF))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "G",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Black
-                                ),
-                                color = OttGold
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Continue with Google",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                ),
-                                color = Color.White
-                            )
-                        }
-                    }
                 }
             }
 

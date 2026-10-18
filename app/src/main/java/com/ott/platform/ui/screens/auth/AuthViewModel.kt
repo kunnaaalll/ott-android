@@ -217,6 +217,10 @@ class AuthViewModel @Inject constructor(
             analyticsTracker.logEvent("logout")
         }
     }
+
+    fun setAuthError(message: String) {
+        _authState.value = AuthState.Error(message)
+    }
     
     private fun mapAuthError(exception: Throwable?): String {
         return when (exception) {
