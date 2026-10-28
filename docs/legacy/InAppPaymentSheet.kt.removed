@@ -1,0 +1,896 @@
+package com.ott.platform.ui.screens.subscription
+
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.ott.platform.data.model.Plan
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.StandardCharsets
+
+data class InAppCheckoutSession(
+    val orderId: String,
+    val paymentSessionId: String,
+    val checkoutUrl: String,
+    val plan: Plan,
+    val environment: String = "PRODUCTION",
+    val customerEmail: String = ""
+)
+
+private const val TAG = "InAppPaymentSheet"
+private const val CHROME_MOBILE_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
+/**
+ * JavaScript Interface matching Cashfree's web checkout native Android bridge.
+ * Cashfree checks: window.Android && window.Android.getAppList && window.Android.openApp
+ * This allows Cashfree to query installed UPI apps and dispatch native app payments directly.
+ */
+class CashfreeAndroidBridge(
+    private val context: Context,
+    private val onPaymentDone: ((orderId: String) -> Unit)? = null,
+    private val onUpiLaunched: (() -> Unit)? = null
+) {
+    private fun getSupportedUpiApps(): String {
+        return try {
+            val list = JSONArray()
+            val addedPackages = mutableSetOf<String>()
+
+            // Provide all top Indian UPI apps so Cashfree renders the full intent options grid
+            val defaultApps = listOf(
+                Pair("GPay", "com.google.android.apps.nbu.paisa.user"),
+                Pair("PhonePe", "com.phonepe.app"),
+                Pair("Paytm", "net.one97.paytm"),
+                Pair("BHIM", "in.org.npci.upiapp"),
+                Pair("CRED", "com.dreamplug.androidapp"),
+                Pair("Navi", "com.navi.personal.loans.home.loans.mutual.funds.cash")
+            )
+
+            for ((name, pkg) in defaultApps) {
+                list.put(JSONObject().apply {
+                    put("appName", name)
+                    put("appPackage", pkg)
+                })
+                addedPackages.add(pkg)
+            }
+
+            // Also dynamically query any additional installed UPI apps (WhatsApp, Amazon Pay, etc.)
+            try {
+                val pm = context.packageManager
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("upi://pay"))
+                val resolveInfoList = pm.queryIntentActivities(intent, 0)
+                for (info in resolveInfoList) {
+                    val pkg = info.activityInfo.packageName
+                    if (!addedPackages.contains(pkg)) {
+                        val label = info.loadLabel(pm).toString()
+                        list.put(JSONObject().apply {
+                            put("appName", label)
+                            put("appPackage", pkg)
+                        })
+                        addedPackages.add(pkg)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Dynamic UPI query: ${e.message}")
+            }
+
+            list.toString()
+        } catch (e: Exception) {
+            "[]"
+        }
+    }
+
+    @JavascriptInterface
+    fun getAppList(): String = getSupportedUpiApps()
+
+    @JavascriptInterface
+    fun getAppList(scheme: String?): String = getSupportedUpiApps()
+
+    @JavascriptInterface
+    fun getAppList(scheme1: String?, scheme2: String?): String = getSupportedUpiApps()
+
+    @JavascriptInterface
+    fun openApp(appPackage: String?, upiUrl: String?) {
+        if (upiUrl.isNullOrBlank()) return
+        Handler(Looper.getMainLooper()).post {
+            onUpiLaunched?.invoke()
+            launchUpiPayment(context, appPackage, upiUrl)
+        }
+    }
+
+    @JavascriptInterface
+    fun openApp(upiUrl: String?) {
+        openApp(null, upiUrl)
+    }
+
+    /**
+     * Cashfree calls this on their bridge when payment transaction finishes.
+     * status: "SUCCESS", "FAILED", "PENDING"
+     * orderData: JSON string with orderId
+     */
+    @JavascriptInterface
+    fun onTransactionComplete(status: String?, orderData: String?) {
+        Log.i(TAG, "onTransactionComplete: status=$status data=$orderData")
+        val isSuccess = status?.uppercase()?.let {
+            it.contains("SUCCESS") || it.contains("PAID")
+        } == true
+        if (isSuccess && onPaymentDone != null) {
+            val orderId = try {
+                JSONObject(orderData ?: "{}").optString("orderId", "")
+            } catch (e: Exception) { "" }
+            Handler(Looper.getMainLooper()).post { onPaymentDone.invoke(orderId) }
+        }
+    }
+
+    /**
+     * Called from our injected JS when Cashfree's postMessage signals payment success.
+     */
+    @JavascriptInterface
+    fun notifyPaymentSuccess(orderId: String?) {
+        Log.i(TAG, "notifyPaymentSuccess: orderId=$orderId")
+        if (onPaymentDone != null) {
+            Handler(Looper.getMainLooper()).post { onPaymentDone.invoke(orderId ?: "") }
+        }
+    }
+
+    @JavascriptInterface
+    fun getPhonePeInfo(): String = "{}"
+
+    @JavascriptInterface
+    fun onUserCancelTransaction() {
+        Log.i(TAG, "User cancelled UPI transaction")
+    }
+
+    @JavascriptInterface
+    fun setDefaultTheme() {}
+}
+
+/**
+ * Universal UPI payment launcher that reliably handles all devices and apps.
+ *
+ * KEY FIX: Do NOT use resolveActivity() to gate intent launches — it returns null for
+ * GPay and many UPI apps on Android 11+ due to activity aliases, split APKs, and
+ * package visibility quirks. Instead, fire the intent directly and catch
+ * ActivityNotFoundException, which is the correct Android pattern.
+ */
+private fun launchUpiPayment(
+    context: Context,
+    appPackage: String?,
+    upiUrl: String
+) {
+    Log.i(TAG, "launchUpiPayment: pkg=$appPackage url=$upiUrl")
+
+    val uri = runCatching { Uri.parse(upiUrl) }.getOrNull()
+
+    val appFriendlyName = when {
+        appPackage?.contains("paisa") == true || appPackage?.contains("wallet") == true -> "Google Pay"
+        appPackage?.contains("phonepe") == true -> "PhonePe"
+        appPackage?.contains("paytm") == true -> "Paytm"
+        appPackage?.contains("npci") == true -> "BHIM"
+        appPackage?.contains("dreamplug") == true -> "CRED"
+        appPackage?.contains("navi") == true -> "Navi"
+        else -> "UPI"
+    }
+
+    // ── Step 1: intent:// scheme (Cashfree sometimes passes these directly) ─────
+    if (upiUrl.startsWith("intent://", ignoreCase = true)) {
+        try {
+            val intent = Intent.parseUri(upiUrl, Intent.URI_INTENT_SCHEME).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "Launched intent:// URI directly")
+            return
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "intent:// target not found, falling through")
+        } catch (e: Exception) {
+            Log.w(TAG, "intent:// parse/launch error: ${e.message}")
+        }
+    }
+
+    if (uri == null) {
+        Log.e(TAG, "Could not parse UPI URL, aborting")
+        Toast.makeText(context, "Invalid payment URL. Please try again.", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    // ── Step 2: Targeted package launch (DO NOT use resolveActivity to gate this) ──
+    // Fire directly and catch ActivityNotFoundException — that is the correct way.
+    if (!appPackage.isNullOrBlank()) {
+        // GPay may also be registered under the wallet package alias on some devices
+        val candidates = buildList {
+            add(appPackage)
+            if (appPackage == "com.google.android.apps.nbu.paisa.user") {
+                add("com.google.android.apps.walletnfcrel")
+            }
+        }
+        for (pkg in candidates) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage(pkg)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                Log.i(TAG, "Launched UPI app: $pkg")
+                return
+            } catch (e: ActivityNotFoundException) {
+                Log.w(TAG, "$pkg not found on device, trying next")
+            } catch (e: Exception) {
+                Log.w(TAG, "Launch error for $pkg: ${e.message}")
+            }
+        }
+        // Targeted package(s) not found — fall through to system chooser
+        Log.w(TAG, "Targeted packages exhausted, falling back to system chooser")
+    }
+
+    // ── Step 3: System-level UPI chooser (no package restriction) ────────────────
+    // Guard with queryIntentActivities FIRST — createChooser will otherwise show
+    // Android's own "No apps can perform this action" dialog when 0 apps match.
+    val availableApps = try {
+        context.packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_VIEW, uri), 0
+        )
+    } catch (e: Exception) { emptyList() }
+
+    if (availableApps.isEmpty()) {
+        Log.w(TAG, "queryIntentActivities returned 0 for $uri — no active UPI app installed")
+        Toast.makeText(
+            context,
+            "No active UPI app found. Please ensure Google Pay, PhonePe, or Paytm has an active bank account linked.",
+            Toast.LENGTH_LONG
+        ).show()
+        return
+    }
+
+    try {
+        val chooserIntent = Intent.createChooser(
+            Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            "Pay with UPI"
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooserIntent)
+        Log.i(TAG, "Launched system UPI chooser with ${availableApps.size} apps")
+        return
+    } catch (e: ActivityNotFoundException) {
+        Log.w(TAG, "No UPI app available for system chooser")
+    } catch (e: Exception) {
+        Log.w(TAG, "System chooser failed: ${e.message}")
+    }
+
+    // ── Step 4: Truly no UPI app available ────────────────────────────────────────
+    Toast.makeText(context, "No active UPI app found. Please ensure Google Pay, PhonePe, or Paytm has an active bank account linked.", Toast.LENGTH_LONG).show()
+}
+
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun InAppPaymentSheet(
+    session: InAppCheckoutSession,
+    onDismiss: () -> Unit,
+    onPaymentComplete: (orderId: String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var loadingProgress by remember { mutableIntStateOf(0) }
+    var showCancelDialog by remember { mutableStateOf(false) }
+    var hasRedirected by remember { mutableStateOf(false) }
+    var upiLaunched by remember { mutableStateOf(false) }
+
+    fun checkAndTriggerCompletion(url: String?): Boolean {
+        if (url.isNullOrBlank() || hasRedirected) return false
+        val lower = url.lowercase()
+
+        val isStatusRedirect = lower.contains("pricing/status") ||
+                lower.contains("subscription/status") ||
+                lower.contains("chumbak://subscription") ||
+                (lower.contains("order_id=") && (lower.contains("status") || lower.contains("success") || lower.contains("paid")))
+
+        if (isStatusRedirect) {
+            hasRedirected = true
+            val extractedId = try {
+                val uri = Uri.parse(url)
+                uri.getQueryParameter("order_id")
+                    ?: uri.getQueryParameter("orderId")
+                    ?: session.orderId
+            } catch (e: Exception) {
+                session.orderId
+            }
+            Log.i(TAG, "Payment return detected for order: $extractedId from url: $url")
+            onPaymentComplete(extractedId)
+            return true
+        }
+        return false
+    }
+
+    val lifecycleOwner = remember(context) { context.findLifecycleOwner() }
+    if (lifecycleOwner != null) {
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                try {
+                    if (event == Lifecycle.Event.ON_RESUME && upiLaunched && !hasRedirected) {
+                        Log.i(TAG, "Activity resumed after UPI app launch. Triggering automatic payment verification.")
+
+                        // Check WebView URL first in case Cashfree already routed
+                        webViewInstance?.evaluateJavascript("window.location.href") { currentUrl ->
+                            val cleanUrl = currentUrl?.trim('"', '\'', ' ')
+                            if (!cleanUrl.isNullOrBlank() && checkAndTriggerCompletion(cleanUrl)) {
+                                return@evaluateJavascript
+                            }
+                        }
+
+                        // Automatically close the sheet and verify payment in ViewModel after 1.2s grace period.
+                        // Cashfree webhook updates our backend in ~1s; ViewModel polls order status and confirms plan seamlessly!
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            if (!hasRedirected) {
+                                hasRedirected = true
+                                onPaymentComplete(session.orderId)
+                            }
+                        }, 1200)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Lifecycle observer error: ${e.message}")
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+    }
+
+    // Intercept hardware and gesture back navigation
+    BackHandler(enabled = true) {
+        if (webViewInstance?.canGoBack() == true) {
+            webViewInstance?.goBack()
+        } else {
+            showCancelDialog = true
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF5328C6)) // Seamless Cashfree purple header match
+    ) {
+        // In-App WebView filling the screen naturally
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    setBackgroundColor(AndroidColor.parseColor("#5328C6"))
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                        setSupportMultipleWindows(true)
+                        javaScriptCanOpenWindowsAutomatically = true
+                        cacheMode = WebSettings.LOAD_DEFAULT
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // Emulate genuine Chrome Mobile to prevent Cashfree WebView QR fallback
+                        userAgentString = CHROME_MOBILE_USER_AGENT
+                    }
+
+                        // Register official Cashfree Android Bridge for native app queries and dispatch
+                        addJavascriptInterface(
+                            CashfreeAndroidBridge(
+                                context = ctx,
+                                onPaymentDone = { orderId ->
+                                    if (!hasRedirected) {
+                                        hasRedirected = true
+                                        onPaymentComplete(orderId.ifBlank { session.orderId })
+                                    }
+                                },
+                                onUpiLaunched = {
+                                    upiLaunched = true
+                                }
+                            ),
+                            "Android"
+                        )
+
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                loadingProgress = newProgress
+                            }
+
+                            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                Log.d(TAG, "JS Console: [${consoleMessage?.messageLevel()}] ${consoleMessage?.message()}")
+                                return true
+                            }
+                        }
+
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldInterceptRequest(
+                                view: WebView?,
+                                request: WebResourceRequest?
+                            ): WebResourceResponse? {
+                                val url = request?.url ?: return null
+                                val urlStr = url.toString()
+                                val method = request.method ?: "GET"
+
+                                // ONLY intercept the initial GET HTML page to strip X-Requested-With and enforce pure UPI Intent flags
+                                // NEVER intercept POST API calls (/checkout/api/checkouts/payments) or JS/CSS chunks as WebResourceRequest does not expose POST body!
+                                val isCheckoutHtmlPage = method.equals("GET", ignoreCase = true) &&
+                                        url.host?.contains("cashfree.com") == true &&
+                                        url.host?.contains("webapp-assets") != true &&
+                                        !urlStr.contains("/api/") &&
+                                        !urlStr.contains("/_app/") &&
+                                        !urlStr.endsWith(".js") &&
+                                        !urlStr.endsWith(".css") &&
+                                        !urlStr.endsWith(".json") &&
+                                        !urlStr.endsWith(".png") &&
+                                        !urlStr.endsWith(".svg") &&
+                                        !urlStr.endsWith(".woff") &&
+                                        !urlStr.endsWith(".woff2") &&
+                                        (url.path?.contains("checkout") == true)
+
+                                if (isCheckoutHtmlPage) {
+                                    try {
+                                        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                                            requestMethod = "GET"
+                                            request.requestHeaders?.forEach { (k, v) ->
+                                                if (!k.equals("X-Requested-With", ignoreCase = true)) {
+                                                    setRequestProperty(k, v)
+                                                }
+                                            }
+                                            setRequestProperty("User-Agent", CHROME_MOBILE_USER_AGENT)
+                                            connectTimeout = 10000
+                                            readTimeout = 10000
+                                            instanceFollowRedirects = true
+                                        }
+
+                                        val statusCode = conn.responseCode
+                                        val encoding = conn.contentEncoding ?: "UTF-8"
+                                        val contentType = conn.contentType ?: "text/html"
+                                        val mimeType = contentType.split(";")[0].trim()
+                                        val inputStream = if (statusCode in 200..299) conn.inputStream else conn.errorStream
+
+                                        if (mimeType.contains("html", ignoreCase = true)) {
+                                            val rawHtml = inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                                            // Force packageName to null and showIntentAppsInWebview to true so Cashfree renders only UPI Intent apps
+                                            val modifiedHtml = rawHtml
+                                                .replace(Regex("\"packageName\":\\s*\"[^\"]*\""), "\"packageName\":null")
+                                                .replace("packageName:\"com.ott.platform\"", "packageName:null")
+                                                .replace("showIntentAppsInWebview:false", "showIntentAppsInWebview:true")
+                                                .replace("\"showIntentAppsInWebview\":false", "\"showIntentAppsInWebview\":true")
+                                                .replace("\"PUBLIC_ENV\":\"SBOX\"", "\"PUBLIC_ENV\":\"PROD\"")
+                                                .replace("PUBLIC_ENV:\"SBOX\"", "PUBLIC_ENV:\"PROD\"")
+
+                                            val headers = mutableMapOf<String, String>()
+                                            conn.headerFields?.forEach { (k, v) ->
+                                                if (k != null && v.isNotEmpty()) {
+                                                    headers[k] = v.joinToString(", ")
+                                                }
+                                            }
+
+                                            return WebResourceResponse(
+                                                "text/html",
+                                                "UTF-8",
+                                                statusCode,
+                                                conn.responseMessage ?: "OK",
+                                                headers,
+                                                ByteArrayInputStream(modifiedHtml.toByteArray(StandardCharsets.UTF_8))
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Request interception fallback: ${e.message}")
+                                    }
+                                }
+                                // Return null for all POST requests, API calls, JS, and CSS to let Chromium handle them natively with full body
+                                return super.shouldInterceptRequest(view, request)
+                            }
+
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val url = request?.url?.toString() ?: return false
+                                return handleUrlLoading(ctx, url, ::checkAndTriggerCompletion) {
+                                    upiLaunched = true
+                                }
+                            }
+
+                            @Deprecated("Deprecated in Java")
+                            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                if (url == null) return false
+                                return handleUrlLoading(ctx, url, ::checkAndTriggerCompletion) {
+                                    upiLaunched = true
+                                }
+                            }
+
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                super.onPageStarted(view, url, favicon)
+                                checkAndTriggerCompletion(url)
+                            }
+
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                checkAndTriggerCompletion(url)
+                                injectUpiOptimizationScript(view)
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                error: WebResourceError?
+                            ) {
+                                Log.w(TAG, "WebView error loading ${request?.url}: ${error?.description}")
+                            }
+                        }
+
+                        webViewInstance = this
+
+                        // Load checkout
+                        val isMockSession = session.paymentSessionId.startsWith("session_mock_") || session.paymentSessionId.isBlank()
+                        if (isMockSession) {
+                            val html = buildMockCheckoutHtml(session)
+                            loadDataWithBaseURL("https://thechumbak.com", html, "text/html", "UTF-8", null)
+                        } else {
+                            val targetUrl = if (session.checkoutUrl.isNotBlank()) {
+                                session.checkoutUrl
+                            } else {
+                                "https://api.cashfree.com/checkout/?session_id=${session.paymentSessionId}"
+                            }
+                            loadUrl(targetUrl)
+                        }
+                    }
+                },
+                update = { webView ->
+                    webViewInstance = webView
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .imePadding()
+            )
+
+            // Top Loading Progress Bar
+            if (loadingProgress in 1..99) {
+                LinearProgressIndicator(
+                    progress = { loadingProgress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(3.dp)
+                        .align(Alignment.TopCenter),
+                    color = Color(0xFFE5A93C),
+                    trackColor = Color.Transparent
+                )
+            }
+
+            // Cancel Confirmation Dialog
+            if (showCancelDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCancelDialog = false },
+                    title = {
+                        Text(
+                            text = "Cancel Checkout?",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Are you sure you want to cancel payment? You will not be charged, and your subscription will not be activated.",
+                            color = Color(0xFFCCCCCC),
+                            fontSize = 14.sp
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showCancelDialog = false
+                                onDismiss()
+                            }
+                        ) {
+                            Text("Exit Checkout", color = Color(0xFFFF6B6B), fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCancelDialog = false }) {
+                            Text("Continue Payment", color = Color.White)
+                        }
+                    },
+                    containerColor = Color(0xFF1C1D24),
+                    shape = RoundedCornerShape(16.dp)
+                )
+            }
+
+
+        }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewInstance?.stopLoading()
+            webViewInstance?.destroy()
+            webViewInstance = null
+        }
+    }
+}
+
+/**
+ * Handles UPI intent schemes (upi://, tez://, phonepe://, paytmmp://, intent://) and returns.
+ * Launches the selected UPI app via Android's native intent directly from the in-app WebView.
+ */
+private fun handleUrlLoading(
+    context: Context,
+    url: String,
+    onStatusCheck: (String) -> Boolean,
+    onUpiLaunched: (() -> Unit)? = null
+): Boolean {
+    if (onStatusCheck(url)) {
+        return true
+    }
+
+    val uri = try {
+        Uri.parse(url)
+    } catch (e: Exception) {
+        return false
+    }
+
+    val scheme = uri.scheme?.lowercase() ?: ""
+
+    // Handle UPI deep links and native app payment intents
+    val isUpiScheme = scheme == "upi" ||
+            scheme == "tez" ||
+            scheme == "gpay" ||
+            scheme == "phonepe" ||
+            scheme == "paytmmp" ||
+            scheme == "paytm" ||
+            scheme == "credpay" ||
+            scheme == "bhim" ||
+            url.startsWith("intent://")
+
+    if (isUpiScheme) {
+        onUpiLaunched?.invoke()
+        launchUpiPayment(context, null, url)
+        return true
+    }
+
+    // Standard HTTP/HTTPS remains inside the in-app WebView
+    if (scheme == "http" || scheme == "https") {
+        return false
+    }
+
+    // Other non-standard schemes
+    return try {
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+    } catch (e: Exception) {
+        true
+    }
+}
+
+/**
+ * Injects CSS/JS into the in-app WebView to:
+ * 1. Suppress QR code elements — enforce pure UPI Intent flow
+ * 2. Listen for Cashfree's postMessage payment completion event
+ *    (fired when user returns from UPI app and payment is confirmed)
+ * 3. Poll page text for success indicators as a belt-and-suspenders fallback
+ */
+private fun injectUpiOptimizationScript(view: WebView?) {
+    val js = """
+        (function() {
+            if (window.__ottInjected) return;
+            window.__ottInjected = true;
+
+            // 1. Force PROD environment flag
+            try {
+                if (window.__sveltekit_xqhlcl && window.__sveltekit_xqhlcl.env) {
+                    window.__sveltekit_xqhlcl.env.PUBLIC_ENV = 'PROD';
+                }
+            } catch(e) {}
+
+            // 2. CSS: hide QR, show intent app buttons, fix scroll
+            try {
+                var style = document.createElement('style');
+                style.innerHTML = `
+                    [class*="qrCode"], [class*="qrcode"], [class*="qr-code"], [id*="qrCode"], [id*="qrcode"] {
+                        display: none !important;
+                    }
+                    [class*="intent"], [class*="upi-app"] {
+                        display: flex !important;
+                        visibility: visible !important;
+                    }
+                    .fixedHeightContainer, [class*="modal"], [class*="bottomSheet"], [class*="drawer"] {
+                        max-height: 80vh !important;
+                        overflow-y: auto !important;
+                        padding-bottom: 24px !important;
+                        box-sizing: border-box !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            } catch(e) {}
+
+            // 3. Intercept Cashfree's window.postMessage payment result
+            //    Cashfree fires: { event: 'PAYMENT_SUCCESS', orderId: '...' }
+            //    or:             { status: 'SUCCESS', order: { orderId: '...' } }
+            window.addEventListener('message', function(event) {
+                try {
+                    var data = event.data;
+                    if (typeof data === 'string') { data = JSON.parse(data); }
+                    if (!data) return;
+
+                    var status = (data.event || data.status || data.paymentStatus || '').toString().toUpperCase();
+                    var isSuccess = status.indexOf('SUCCESS') >= 0 || status.indexOf('PAID') >= 0;
+
+                    if (isSuccess) {
+                        var orderId = data.orderId || data.order_id ||
+                                      (data.order && data.order.orderId) || '';
+                        if (window.Android && window.Android.notifyPaymentSuccess) {
+                            window.Android.notifyPaymentSuccess(orderId);
+                        }
+                    }
+                } catch(e) {}
+            });
+
+            // 4. Belt-and-suspenders: poll page for visible success text
+            //    in case Cashfree doesn't fire postMessage on this device/version
+            var pollCount = 0;
+            var successPoller = setInterval(function() {
+                pollCount++;
+                if (pollCount > 60) { clearInterval(successPoller); return; } // stop after 60s
+                try {
+                    var bodyText = (document.body && document.body.innerText) ? document.body.innerText.toLowerCase() : '';
+                    var isSuccessPage = bodyText.indexOf('payment successful') >= 0 ||
+                                        bodyText.indexOf('order successful') >= 0 ||
+                                        bodyText.indexOf('payment is successful') >= 0 ||
+                                        bodyText.indexOf('transaction successful') >= 0;
+                    if (isSuccessPage) {
+                        clearInterval(successPoller);
+                        // Try to extract orderId from URL
+                        var params = new URLSearchParams(window.location.search);
+                        var orderId = params.get('order_id') || params.get('orderId') || '';
+                        if (window.Android && window.Android.notifyPaymentSuccess) {
+                            window.Android.notifyPaymentSuccess(orderId);
+                        }
+                    }
+                } catch(e) {}
+            }, 1000);
+        })();
+    """.trimIndent()
+    view?.evaluateJavascript(js, null)
+}
+
+/**
+ * Builds mock interactive sandbox checkout HTML for offline/mock automated tests.
+ */
+private fun buildMockCheckoutHtml(session: InAppCheckoutSession): String {
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <title>Cashfree Checkout</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          background-color: #0b0c0f;
+          color: #ffffff;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          padding: 24px 16px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          min-height: 100vh;
+        }
+        .card {
+          width: 100%;
+          max-width: 400px;
+          background: #14151b;
+          border: 1px solid #262626;
+          border-radius: 16px;
+          padding: 20px;
+        }
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 20px;
+          padding-bottom: 14px;
+          border-bottom: 1px solid #262626;
+        }
+        .plan-title { font-size: 17px; font-weight: 700; }
+        .plan-sub { font-size: 12px; color: #888; }
+        .amount { font-size: 20px; font-weight: 800; color: #10b981; }
+        .btn {
+          width: 100%;
+          padding: 14px;
+          border-radius: 24px;
+          border: none;
+          font-size: 13px;
+          font-weight: 800;
+          text-transform: uppercase;
+          cursor: pointer;
+          margin-top: 16px;
+        }
+        .btn-pay { background: #e50914; color: #fff; }
+        .btn-cancel { background: transparent; color: #888; border: 1px solid #333; margin-top: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="header">
+          <div>
+            <div class="plan-title">${session.plan.name}</div>
+            <div class="plan-sub">Order Ref: ${session.orderId}</div>
+          </div>
+          <div class="amount">${session.plan.formattedAmount()}</div>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin-bottom: 16px;">
+          Mock/Sandbox UPI Checkout Environment for Automated Testing.
+        </p>
+        <button id="payBtn" class="btn btn-pay" onclick="proceedPayment()">
+          PROCEED WITH TEST PAYMENT
+        </button>
+        <button class="btn btn-cancel" onclick="cancelPayment()">
+          CANCEL
+        </button>
+      </div>
+
+      <script>
+        function proceedPayment() {
+          if (window.AndroidPaymentBridge && window.AndroidPaymentBridge.onPaymentSuccess) {
+            window.AndroidPaymentBridge.onPaymentSuccess("${session.orderId}");
+          }
+        }
+        function cancelPayment() {
+          if (window.AndroidPaymentBridge && window.AndroidPaymentBridge.onPaymentCancel) {
+            window.AndroidPaymentBridge.onPaymentCancel();
+          }
+        }
+      </script>
+    </body>
+    </html>
+    """.trimIndent()
+}
+
+private fun Context.findLifecycleOwner(): LifecycleOwner? {
+    var cur = this
+    while (cur is android.content.ContextWrapper) {
+        if (cur is LifecycleOwner) return cur
+        cur = cur.baseContext
+    }
+    return null
+}

@@ -4,9 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
-    // Uncomment after adding google-services.json:
-    // alias(libs.plugins.google.services)
-    // alias(libs.plugins.firebase.crashlytics)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -98,6 +96,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.splashscreen)
+    implementation("androidx.browser:browser:1.8.0")
 
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))
@@ -128,6 +127,9 @@ dependencies {
 
     // Google Sign-In
     implementation(libs.google.auth)
+
+    // Meta (Facebook) App Events SDK
+    implementation(libs.facebook.core)
 
     // Coil — image loading
     implementation(libs.coil.compose)

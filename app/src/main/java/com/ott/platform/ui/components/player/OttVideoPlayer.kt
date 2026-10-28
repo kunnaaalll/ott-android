@@ -141,8 +141,10 @@ fun OttVideoPlayer(
                 return@LaunchedEffect
             }
 
-            val cookieString = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            val isPrivateHost = (host == configuredHost) || host.endsWith("purestore.io")
+            val cookieString = if (isPrivateHost) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else ""
             val dataSourceFactory = DefaultHttpDataSource.Factory().apply {
+                setUserAgent("ChumbakOTT-Android/1.0.2")
                 if (cookieString.isNotEmpty()) {
                     setDefaultRequestProperties(mapOf("Cookie" to cookieString))
                 }

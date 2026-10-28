@@ -157,6 +157,13 @@ class ProfileViewModel @Inject constructor(
         _uiState.update { it.copy(cacheSize = "0 B") }
     }
 
+    fun signOut() {
+        viewModelScope.launch {
+            authRepository.signOut()
+            _uiState.value = ProfileUiState(isLoading = false)
+        }
+    }
+
     private fun formatExpiry(subscription: Subscription?): String? {
         if (subscription == null) return null
         val timeMs = subscription.currentPeriodEnd

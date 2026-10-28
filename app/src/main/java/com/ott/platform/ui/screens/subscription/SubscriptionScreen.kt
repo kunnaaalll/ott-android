@@ -1,20 +1,37 @@
 
 package com.ott.platform.ui.screens.subscription
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,19 +74,45 @@ fun SubscriptionScreen(
     val subscriptionState by viewModel.subscriptionState.collectAsState()
     val plans by viewModel.plans.collectAsState()
     val isPaymentProcessing by viewModel.isPaymentProcessing.collectAsState()
+    val context = LocalContext.current
+    val lifecycleOwner = context as? LifecycleOwner
+
+    // Open the website checkout (already signed in through the single-use handoff) in a Custom Tab.
+    LaunchedEffect(viewModel) {
+        viewModel.checkoutLaunch.collect { url -> openCheckoutInBrowser(context, url) }
+    }
+
+    // Coming back from the browser is only a navigation event: re-read the state from the backend.
+    if (lifecycleOwner != null) {
+        DisposableEffect(lifecycleOwner, viewModel) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    try {
+                        viewModel.onScreenResumed()
+                    } catch (t: Throwable) {
+                        // Safe fallback on unexpected state
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+    }
 
     var selectedPlan by remember { mutableStateOf<Plan?>(null) }
+    var hasHandledSuccess by remember { mutableStateOf(false) }
 
-    // Synchronize default selected plan when plans list loads
+    // Synchronize default selected plan when plans list loads (lowest plan on top selected first)
     LaunchedEffect(plans) {
         if (selectedPlan == null && plans.isNotEmpty()) {
-            selectedPlan = plans.firstOrNull { it.featured } ?: plans.first()
+            selectedPlan = plans.first()
         }
     }
 
     // Auto-navigate to main content when subscription becomes active
     LaunchedEffect(subscriptionState) {
-        if (subscriptionState is SubscriptionState.Active) {
+        if (subscriptionState is SubscriptionState.Active && !hasHandledSuccess) {
+            hasHandledSuccess = true
             onSubscribeSuccess()
         }
     }
@@ -141,6 +185,36 @@ fun SubscriptionScreen(
                 }
             }
 
+            if (subscriptionState is SubscriptionState.ConfirmingTimeout) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = spacing.md)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF2E2005))
+                        .border(1.dp, OttGold.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(spacing.md),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Payment confirmation is taking a moment. If you completed payment in your UPI app, check status below:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OttGold,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OttButton(
+                            text = "CHECK PAYMENT STATUS",
+                            onClick = { viewModel.retryCheckPayment() }
+                        )
+                    }
+                }
+            }
+
             if (subscriptionState is SubscriptionState.Error) {
                 Box(
                     modifier = Modifier
@@ -179,7 +253,7 @@ fun SubscriptionScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(plans, key = { it.id }) { plan ->
+                    itemsIndexed(plans, key = { index, plan -> "${plan.id.ifBlank { "plan" }}_$index" }) { _, plan ->
                         val isSelected = selectedPlan?.id == plan.id
 
                         Box(
@@ -277,16 +351,12 @@ fun SubscriptionScreen(
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 // Feature Checklist
-                                val featuresToDisplay = if (plan.features.isNotEmpty()) {
-                                    plan.features
-                                } else {
-                                    listOf(
-                                        "Unlimited Streaming",
-                                        "Watch Content In HD, 4K, 2K",
-                                        "Watch Everywhere",
-                                        "New Release In Every Week"
-                                    )
-                                }
+                                val featuresToDisplay = plan.features?.takeIf { it.isNotEmpty() } ?: listOf(
+                                    "Unlimited Streaming",
+                                    "Watch Content In HD, 4K, 2K",
+                                    "Watch Everywhere",
+                                    "New Release In Every Week"
+                                )
 
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -327,14 +397,15 @@ fun SubscriptionScreen(
                     .padding(bottom = spacing.md),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                val currentPlan = selectedPlan
                 OttButton(
-                    text = if (selectedPlan != null) {
-                        "BUY NOW  •  ${selectedPlan!!.formattedAmount()} (${selectedPlan!!.formattedPeriod()})"
+                    text = if (currentPlan != null) {
+                        "BUY NOW  •  ${currentPlan.formattedAmount()} (${currentPlan.formattedPeriod()})"
                     } else {
                         "BUY NOW"
                     },
-                    onClick = { selectedPlan?.let { viewModel.initiatePayment(it) } },
-                    enabled = !isPaymentProcessing && selectedPlan != null && subscriptionState !is SubscriptionState.Pending && subscriptionState !is SubscriptionState.Confirming,
+                    onClick = { currentPlan?.let { viewModel.initiatePayment(it) } },
+                    enabled = !isPaymentProcessing && currentPlan != null && subscriptionState !is SubscriptionState.Pending && subscriptionState !is SubscriptionState.Confirming,
                     isLoading = isPaymentProcessing
                 )
 
@@ -356,6 +427,26 @@ fun SubscriptionScreen(
                     color = OttTextSecondary
                 )
             }
+        }
+
+    }
+}
+
+/**
+ * Opens the checkout URL in a Custom Tab (falls back to the default browser). The URL contains a
+ * one-time secret in its fragment, so it is never logged.
+ */
+private fun openCheckoutInBrowser(context: Context, url: String) {
+    val uri = Uri.parse(url)
+    try {
+        val tab = CustomTabsIntent.Builder().setShowTitle(true).build()
+        tab.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        tab.launchUrl(context, uri)
+    } catch (e: ActivityNotFoundException) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e2: ActivityNotFoundException) {
+            // No browser available on the device; nothing else to do.
         }
     }
 }

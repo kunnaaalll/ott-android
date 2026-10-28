@@ -37,7 +37,7 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.currentUser.collect { user ->
                 val uid = user?.uid ?: authRepository.getCurrentUserId()
-                if (uid != null) {
+                if (!uid.isNullOrBlank()) {
                     _authState.value = AuthState.Authenticated(uid)
                 } else {
                     _authState.value = AuthState.Unauthenticated
@@ -182,6 +182,33 @@ class AuthViewModel @Inject constructor(
         }
     }
     
+    fun signInWithGoogleAccount(
+        email: String,
+        displayName: String,
+        photoUrl: String = "",
+        googleId: String = ""
+    ) {
+        viewModelScope.launch {
+            _authState.value = AuthState.Loading
+            analyticsTracker.logEvent("google_login_started")
+            val result = authRepository.signInWithGoogleAccount(email, displayName, photoUrl, googleId)
+            result.onSuccess { user ->
+                _authState.value = AuthState.Authenticated(user.id)
+                analyticsTracker.setUserId(user.id)
+                crashReporter.setUserId(user.id)
+                analyticsTracker.logEvent("google_login_success")
+                launch {
+                    try {
+                        userRepository.updateLastLogin(user.id)
+                    } catch (e: Exception) { }
+                }
+            }.onFailure { err ->
+                analyticsTracker.logEvent("google_login_failed")
+                _authState.value = AuthState.Error(err.message ?: "Google Sign-In failed.")
+            }
+        }
+    }
+
     fun signInWithGoogle(idToken: String) {
         viewModelScope.launch {
             _authState.value = AuthState.Loading
@@ -214,6 +241,7 @@ class AuthViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch {
             authRepository.signOut()
+            _authState.value = AuthState.Unauthenticated
             analyticsTracker.logEvent("logout")
         }
     }

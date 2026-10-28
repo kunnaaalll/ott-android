@@ -52,26 +52,45 @@ class ContentRepositoryImpl @Inject constructor(
     }
 
     override fun observeContentById(contentId: String): Flow<Content?> = callbackFlow {
+        if (contentId.isBlank()) {
+            trySend(null)
+            close()
+            return@callbackFlow
+        }
+
         // 1. Fast initial fetch from authoritative website CMS
         launch {
-            val cmsResult = websiteApiClient.fetchContentById(contentId)
-            if (cmsResult.isSuccess) {
-                trySend(cmsResult.getOrThrow())
+            try {
+                val cmsResult = websiteApiClient.fetchContentById(contentId)
+                if (cmsResult.isSuccess) {
+                    trySend(cmsResult.getOrThrow())
+                }
+            } catch (e: Exception) {
+                // Ignore CMS fetch failure
             }
         }
 
-        // 2. Real-time updates from Firestore
-        val listener = contentCollection.document(contentId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    return@addSnapshotListener
+        // 2. Real-time updates from Firestore (safely registered)
+        var listener: com.google.firebase.firestore.ListenerRegistration? = null
+        try {
+            listener = contentCollection.document(contentId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        return@addSnapshotListener
+                    }
+                    try {
+                        val item = snapshot?.toObject(Content::class.java)
+                        if (item != null) {
+                            trySend(item)
+                        }
+                    } catch (e: Exception) {
+                        // Serialization failure protection
+                    }
                 }
-                val item = snapshot?.toObject(Content::class.java)
-                if (item != null) {
-                    trySend(item)
-                }
-            }
-        awaitClose { listener.remove() }
+        } catch (e: Exception) {
+            // Document path error protection
+        }
+        awaitClose { listener?.remove() }
     }
 
     private fun resolveTenant(tenantId: String): String {
@@ -158,7 +177,12 @@ class ContentRepositoryImpl @Inject constructor(
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
             val items = cmsResult.getOrThrow()
-            return items.sortedByDescending { it.releaseDate?.toDate()?.time ?: 0L }.take(limit)
+            val curatedNew = items.filter { it.isNewRelease }
+            return if (curatedNew.isNotEmpty()) {
+                curatedNew.take(limit)
+            } else {
+                items.sortedByDescending { it.releaseDate?.toDate()?.time ?: 0L }.take(limit)
+            }
         }
 
         return try {
@@ -181,7 +205,13 @@ class ContentRepositoryImpl @Inject constructor(
         val effectiveTenant = resolveTenant(tenantId)
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
-            return cmsResult.getOrThrow().take(limit)
+            val items = cmsResult.getOrThrow()
+            val curatedTrending = items.filter { it.isTrending }
+            return if (curatedTrending.isNotEmpty()) {
+                curatedTrending.take(limit)
+            } else {
+                items.take(limit)
+            }
         }
 
         return try {

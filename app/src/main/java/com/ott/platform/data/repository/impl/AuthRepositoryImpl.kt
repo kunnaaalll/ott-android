@@ -4,6 +4,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.ott.platform.core.api.WebsiteApiClient
 import com.ott.platform.core.session.SessionManager
+import com.ott.platform.data.model.Subscription
+import com.ott.platform.data.model.SubscriptionStatus
 import com.ott.platform.data.model.User
 import com.ott.platform.data.repository.AuthRepository
 import com.ott.platform.data.repository.SubscriptionRepository
@@ -94,12 +96,7 @@ class AuthRepositoryImpl @Inject constructor(
                 )
                 Result.success(user)
             } catch (e: Exception) {
-                val websiteError = websiteResult.exceptionOrNull()?.message
-                if (!websiteError.isNullOrBlank()) {
-                    Result.failure(Exception(websiteError))
-                } else {
-                    Result.failure(e)
-                }
+                Result.failure(e)
             }
         } else {
             val websiteError = websiteResult.exceptionOrNull()?.message ?: "Invalid credentials"
@@ -146,6 +143,26 @@ class AuthRepositoryImpl @Inject constructor(
         return register(name, trimmedEmail, "9999999999", password)
     }
 
+    override suspend fun signInWithGoogleAccount(
+        email: String,
+        displayName: String,
+        photoUrl: String,
+        googleId: String
+    ): Result<User> {
+        val result = websiteApiClient.loginWithGoogle(email, displayName, photoUrl, googleId)
+        if (result.isSuccess) {
+            val authData = result.getOrThrow()
+            val user = authData.user
+            sessionManager.saveSession(user)
+            userRepository.createOrUpdateUser(user)
+            if (authData.subscription != null) {
+                subscriptionRepository.recordActiveSubscription(authData.subscription)
+            }
+            return Result.success(user)
+        }
+        return Result.failure(result.exceptionOrNull() ?: Exception("Google authentication failed"))
+    }
+
     override suspend fun signInWithGoogle(idToken: String): Result<FirebaseUser> {
         return try {
             val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
@@ -162,7 +179,12 @@ class AuthRepositoryImpl @Inject constructor(
             )
             Result.success(user)
         } catch (e: Exception) {
-            Result.failure(e)
+            val friendlyMsg = if (e.message?.contains("API key not valid", ignoreCase = true) == true) {
+                "Google Sign-In is unavailable on this build. Please sign in using Mobile Number + OTP."
+            } else {
+                e.message ?: "Google Sign-In failed"
+            }
+            Result.failure(Exception(friendlyMsg))
         }
     }
 
@@ -186,7 +208,21 @@ class AuthRepositoryImpl @Inject constructor(
     }
 
     override suspend fun signOut() {
+        // Revoke the backend app credential (and any browser checkout session it opened), then
+        // drop local state. Best effort: the credential is deleted locally either way.
+        try {
+            websiteApiClient.logout()
+        } catch (e: Exception) {
+            // Non-fatal
+        }
         sessionManager.clearSession()
+        try {
+            subscriptionRepository.recordActiveSubscription(
+                Subscription(status = SubscriptionStatus.EXPIRED.name)
+            )
+        } catch (e: Exception) {
+            // Non-fatal
+        }
         try {
             auth.signOut()
         } catch (e: Exception) {
@@ -195,6 +231,6 @@ class AuthRepositoryImpl @Inject constructor(
     }
     
     override fun getCurrentUserId(): String? {
-        return auth.currentUser?.uid ?: sessionManager.getUserId()
+        return sessionManager.getUserId() ?: auth.currentUser?.uid
     }
 }

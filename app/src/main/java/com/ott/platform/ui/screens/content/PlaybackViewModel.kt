@@ -69,44 +69,51 @@ class PlaybackViewModel @Inject constructor(
         _cookies.value = emptyMap()
 
         viewModelScope.launch {
-            val result = playbackAuthorizationRepository.authorizePlayback(
-                contentId = contentId,
-                isTrailer = isTrailer,
-                seriesId = seriesId,
-                seasonId = seasonId
-            )
-            
-            // Check if the parameters have changed while we were waiting
-            if (currentContentId != contentId ||
-                currentIsTrailer != isTrailer ||
-                currentSeriesId != seriesId ||
-                currentSeasonId != seasonId
-            ) {
-                return@launch
-            }
+            try {
+                val result = playbackAuthorizationRepository.authorizePlayback(
+                    contentId = contentId,
+                    isTrailer = isTrailer,
+                    seriesId = seriesId,
+                    seasonId = seasonId
+                )
+                
+                // Check if the parameters have changed while we were waiting
+                if (currentContentId != contentId ||
+                    currentIsTrailer != isTrailer ||
+                    currentSeriesId != seriesId ||
+                    currentSeasonId != seasonId
+                ) {
+                    return@launch
+                }
 
-            result.onSuccess { auth ->
-                if (auth.authorized && auth.playbackUrl.isNotEmpty()) {
-                    _playbackUrl.value = auth.playbackUrl
-                    _cookies.value = auth.cookies
-                    _playbackState.value = PlaybackState.Preparing
-                } else {
+                result.onSuccess { auth ->
+                    if (auth.authorized && auth.playbackUrl.isNotEmpty()) {
+                        _playbackUrl.value = auth.playbackUrl
+                        _cookies.value = auth.cookies
+                        _playbackState.value = PlaybackState.Preparing
+                    } else {
+                        _playbackState.value = PlaybackState.Error(
+                            message = "Playback not authorized.",
+                            reason = auth.reason
+                        )
+                    }
+                }.onFailure {
+                    val reason = it.message
+                    val displayMessage = when (reason) {
+                        "UNAUTHENTICATED" -> "Please sign in to continue."
+                        "SUBSCRIPTION_REQUIRED" -> "Your subscription is required to watch this content."
+                        "CONTENT_UNAVAILABLE" -> "This content is currently unavailable."
+                        else -> "Playback is temporarily unavailable. Please try again later."
+                    }
                     _playbackState.value = PlaybackState.Error(
-                        message = "Playback not authorized.",
-                        reason = auth.reason
+                        message = displayMessage,
+                        reason = reason
                     )
                 }
-            }.onFailure {
-                val reason = it.message
-                val displayMessage = when (reason) {
-                    "UNAUTHENTICATED" -> "Please sign in to continue."
-                    "SUBSCRIPTION_REQUIRED" -> "Your subscription is required to watch this content."
-                    "CONTENT_UNAVAILABLE" -> "This content is currently unavailable."
-                    else -> "Playback is temporarily unavailable. Please try again later."
-                }
+            } catch (e: Exception) {
                 _playbackState.value = PlaybackState.Error(
-                    message = displayMessage,
-                    reason = reason
+                    message = "Playback is temporarily unavailable. Please try again later.",
+                    reason = e.localizedMessage
                 )
             }
         }

@@ -25,7 +25,7 @@ class MyListRepositoryImpl @Inject constructor(
             .orderBy("addedAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(emptyList())
                     return@addSnapshotListener
                 }
                 val items = snapshot?.toObjects(MyListItem::class.java) ?: emptyList()
@@ -38,7 +38,7 @@ class MyListRepositoryImpl @Inject constructor(
         val listener = userMyListCollection(userId).document(contentId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    trySend(false)
                     return@addSnapshotListener
                 }
                 trySend(snapshot?.exists() ?: false)
@@ -47,14 +47,22 @@ class MyListRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addToMyList(userId: String, contentId: String) {
-        val item = mapOf(
-            "contentId" to contentId,
-            "addedAt" to FieldValue.serverTimestamp()
-        )
-        userMyListCollection(userId).document(contentId).set(item).await()
+        try {
+            val item = mapOf(
+                "contentId" to contentId,
+                "addedAt" to FieldValue.serverTimestamp()
+            )
+            userMyListCollection(userId).document(contentId).set(item).await()
+        } catch (e: Exception) {
+            android.util.Log.w("MyListRepository", "Failed to add to MyList in Firestore: ${e.message}")
+        }
     }
 
     override suspend fun removeFromMyList(userId: String, contentId: String) {
-        userMyListCollection(userId).document(contentId).delete().await()
+        try {
+            userMyListCollection(userId).document(contentId).delete().await()
+        } catch (e: Exception) {
+            android.util.Log.w("MyListRepository", "Failed to remove from MyList in Firestore: ${e.message}")
+        }
     }
 }

@@ -319,15 +319,25 @@ fun ProfileScreen(
                         HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Included VIP Perks
-                        Row(
+                        // Included VIP Perks (2x2 Grid with comfortable spacing)
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            VipPerkItem(label = "4K UHD")
-                            VipPerkItem(label = "100% Ad-Free")
-                            VipPerkItem(label = "Multi-Device")
-                            VipPerkItem(label = "Downloads")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                VipPerkItem(label = "4K UHD Streaming", modifier = Modifier.weight(1f))
+                                VipPerkItem(label = "100% Ad-Free", modifier = Modifier.weight(1f))
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                VipPerkItem(label = "Multi-Device", modifier = Modifier.weight(1f))
+                                VipPerkItem(label = "Offline Downloads", modifier = Modifier.weight(1f))
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -586,6 +596,7 @@ fun ProfileScreen(
                 Button(
                     onClick = {
                         showSignOutDialog = false
+                        viewModel.signOut()
                         onSignOut()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = OttError)
@@ -682,7 +693,7 @@ fun ProfileScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "• Email: support@thechumbak.com\n• Website: https://thechumbak.com\n• Response Time: Within 24 hours",
+                        text = "• Email: chumbakott@gmail.com\n• Mobile: 8850104716\n• Response Time: Within 24 hours",
                         style = MaterialTheme.typography.bodyMedium,
                         color = OttTextPrimary,
                         fontWeight = FontWeight.Medium
@@ -713,20 +724,24 @@ private fun ProfileSectionHeader(title: String) {
 }
 
 @Composable
-private fun VipPerkItem(label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun VipPerkItem(label: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Icon(
             imageVector = Icons.Default.CheckCircle,
             contentDescription = null,
             tint = OttGold,
             modifier = Modifier.size(13.dp)
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
         )
     }
 }

@@ -39,12 +39,24 @@ class ContentDetailViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             
             try {
-                val content = contentRepository.observeContentById(contentId).firstOrNull()
+                val content = kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                    contentRepository.observeContentById(contentId).firstOrNull()
+                } ?: run {
+                    // Fallback to direct catalog lookup if stream timed out
+                    contentRepository.getContentByCategory(tenantId, "").firstOrNull { it.id == contentId }
+                        ?: contentRepository.getFeaturedContent(tenantId).firstOrNull { it.id == contentId }
+                }
+
                 if (content != null) {
-                    // Fetch related content
+                    // Fetch related content safely and deduplicate
                     val related = if (content.categoryIds.isNotEmpty()) {
-                        contentRepository.getContentByCategory(tenantId, content.categoryIds.first())
-                            .filter { it.id != contentId }
+                        try {
+                            contentRepository.getContentByCategory(tenantId, content.categoryIds.first())
+                                .filter { it.id != contentId }
+                                .distinctBy { it.id }
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
                     } else emptyList()
 
                     _uiState.update { 
@@ -55,14 +67,19 @@ class ContentDetailViewModel @Inject constructor(
                         )
                     }
                     
-                    // Observe MyList state for this content
+                    // Observe MyList state for this content safely
                     val currentUserId = userId
                     if (currentUserId != null) {
                         launch {
-                            myListRepository.observeIsInMyList(currentUserId, contentId)
-                                .collectLatest { inList ->
-                                    _uiState.update { it.copy(isInMyList = inList) }
-                                }
+                            try {
+                                myListRepository.observeIsInMyList(currentUserId, contentId)
+                                    .catch { emit(false) }
+                                    .collectLatest { inList ->
+                                        _uiState.update { it.copy(isInMyList = inList) }
+                                    }
+                            } catch (e: Exception) {
+                                // Non-fatal if offline or Firestore denied
+                            }
                         }
                     }
                 } else {

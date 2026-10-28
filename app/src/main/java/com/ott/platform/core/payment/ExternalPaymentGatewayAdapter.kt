@@ -1,101 +1,70 @@
 package com.ott.platform.core.payment
 
-import android.content.Context
-import com.google.firebase.Timestamp
+import com.ott.platform.core.analytics.MetaAnalyticsTracker
+import com.ott.platform.core.api.CheckoutHandoff
+import com.ott.platform.core.api.OrderStatus
+import com.ott.platform.core.api.WebsiteApiClient
+import com.ott.platform.core.session.SessionManager
 import com.ott.platform.data.model.Plan
-import com.ott.platform.data.model.Subscription
 import com.ott.platform.data.model.SubscriptionStatus
-import com.ott.platform.data.model.User
-import com.ott.platform.data.repository.SubscriptionRepository
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Adapter for Payment Gateway integration in Android OTT.
- * Dispatches order verification to backend Cashfree services and activates subscription.
+ * Web-based checkout adapter. The app never contacts the payment gateway directly:
+ * 1. [startWebCheckout] asks the Chumbak backend for a checkout session.
+ * 2. If the single-use handoff endpoint is unavailable, it seamlessly uses the authoritative
+ *    Cashfree order creation endpoint on thechumbak.com.
+ * 3. The caller opens the returned website URL in the browser, where the user completes payment.
+ * 4. Subscriptions are activated by the backend after verified payment.
  */
 @Singleton
 class ExternalPaymentGatewayAdapter @Inject constructor(
-    private val subscriptionRepository: SubscriptionRepository,
-    @ApplicationContext private val context: Context
+    private val websiteApiClient: WebsiteApiClient,
+    private val metaAnalyticsTracker: MetaAnalyticsTracker,
+    private val sessionManager: SessionManager
 ) : PaymentGateway {
 
-    override suspend fun initiatePayment(user: User, plan: Plan) {
-        withContext(Dispatchers.IO) {
-            val orderId = "order_android_${System.currentTimeMillis()}_${(1000..9999).random()}"
-            val effectiveTenantId = if (user.tenantId.isNotBlank()) user.tenantId else "tenant_chumbak"
-            val now = System.currentTimeMillis()
-            val durationMs = plan.durationDays * 24L * 60L * 60L * 1000L
+    override suspend fun startWebCheckout(plan: Plan): CheckoutHandoff {
+        val user = sessionManager.getSessionUser()
+        val userId = user?.id ?: sessionManager.getUserId() ?: "usr_mobile_app"
+        val phone = sessionManager.getPhoneNumber() ?: ""
+        val email = user?.email ?: ""
 
-            var verifiedRemotely = false
-
-            try {
-                val url = URL("https://thechumbak.com/api/payments/cashfree/verify-order")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    setRequestProperty("Accept", "application/json")
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                    doOutput = true
-                }
-
-                val payload = JSONObject().apply {
-                    put("orderId", orderId)
-                    put("planId", plan.id)
-                    put("planName", plan.name)
-                    put("amount", plan.price)
-                    put("durationDays", plan.durationDays)
-                    put("userId", user.id)
-                    put("tenantId", effectiveTenantId)
-                }
-
-                OutputStreamWriter(conn.outputStream, "UTF-8").use { writer ->
-                    writer.write(payload.toString())
-                    writer.flush()
-                }
-
-                val responseCode = conn.responseCode
-                if (responseCode in 200..299) {
-                    verifiedRemotely = true
-                }
-            } catch (e: Exception) {
-                // If offline or network unavailable, fall back to seamless sandbox entitlement
-            }
-
-            // Record authoritative or sandbox-verified subscription
-            val activeSubscription = Subscription(
-                id = "sub_$orderId",
-                tenantId = effectiveTenantId,
-                userId = user.id,
+        val handoffResult = runCatching { websiteApiClient.requestCheckoutHandoff(plan.id).getOrThrow() }
+        val handoff = if (handoffResult.isSuccess) {
+            handoffResult.getOrThrow()
+        } else {
+            websiteApiClient.createCashfreeOrder(
                 planId = plan.id,
-                status = SubscriptionStatus.ACTIVE.name,
-                currentPeriodStart = now,
-                currentPeriodEnd = now + durationMs,
-                provider = if (verifiedRemotely) "CASHFREE_PROD" else "CASHFREE_SANDBOX",
-                startDate = Timestamp(Date(now)),
-                expiryDate = Timestamp(Date(now + durationMs)),
-                createdAt = Timestamp(Date(now)),
-                updatedAt = Timestamp(Date(now))
-            )
-
-            subscriptionRepository.recordActiveSubscription(activeSubscription)
+                amount = plan.price,
+                userId = userId,
+                customerPhone = phone,
+                customerEmail = email
+            ).getOrThrow()
         }
+
+        // Track InitiateCheckout
+        metaAnalyticsTracker.logInitiateCheckout(
+            planId = plan.id,
+            planName = plan.name,
+            amount = plan.price,
+            currency = "INR",
+            checkoutSessionId = null
+        )
+        return handoff
     }
 
     override suspend fun getSubscriptionStatus(gatewaySubscriptionId: String): String {
-        return SubscriptionStatus.ACTIVE.name
+        return try {
+            val status = websiteApiClient.checkOrderStatus(gatewaySubscriptionId).getOrNull()
+            if (status == OrderStatus.PAID) SubscriptionStatus.ACTIVE.name else SubscriptionStatus.PENDING.name
+        } catch (e: Exception) {
+            SubscriptionStatus.PENDING.name
+        }
     }
 
     override suspend fun cancelSubscription(gatewaySubscriptionId: String) {
-        // Optional client cancellation; authoritative handling via backend webhooks
+        // Authoritative cancellation is handled server-side.
     }
 }

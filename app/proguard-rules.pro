@@ -28,3 +28,20 @@
 # Media3 ExoPlayer
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
+
+# WebView & JavascriptInterface
+-keepattributes JavascriptInterface
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# UI Screen ViewModels & State classes
+-keep class com.ott.platform.ui.screens.** { *; }
+-keepclassmembers class com.ott.platform.ui.screens.** { *; }
+
+# Facebook SDK
+-keep class com.facebook.** { *; }
+-keepclassmembers class com.facebook.** { *; }
+-dontwarn com.facebook.**
+
+

@@ -47,6 +47,12 @@ data class Content(
 
     val featured: Boolean = false,
 
+    @PropertyName("isTrending")
+    val isTrending: Boolean = false,
+
+    @PropertyName("isNewRelease")
+    val isNewRelease: Boolean = false,
+
     val status: String = ContentStatus.DRAFT.name,
 
     @ServerTimestamp

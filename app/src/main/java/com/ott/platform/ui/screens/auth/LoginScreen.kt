@@ -1,5 +1,11 @@
 package com.ott.platform.ui.screens.auth
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -45,31 +51,18 @@ import com.ott.platform.BuildConfig
 import com.ott.platform.R
 import com.ott.platform.ui.theme.*
 import kotlinx.coroutines.delay
-
-enum class LoginMode {
-    OTP,
-    PASSWORD
-}
-
 private const val FEATURED_BACKDROP_URL =
     "https://s3.in-west2.purestore.io/chumbak/posters/upl_1792312345569_tmrp6on_Hilarious_Police_Station_Chaos.png"
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
-    onNavigateToRegister: () -> Unit,
+    onNavigateToRegister: () -> Unit = {},
     viewModel: AuthViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
-
-    var loginMode by remember { mutableStateOf(LoginMode.OTP) }
-
-    // Password mode states
-    var identifier by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
 
     // OTP mode states
     var mobile by remember { mutableStateOf("") }
@@ -80,6 +73,51 @@ fun LoginScreen(
 
     val authState by viewModel.authState.collectAsState()
     val isLoading = authState is AuthState.Loading
+
+    var showGoogleEmailDialog by remember { mutableStateOf(false) }
+    var directGoogleEmail by remember { mutableStateOf("") }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_CANCELED) {
+            return@rememberLauncherForActivityResult
+        }
+
+        val data = result.data
+        if (data != null) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            val account = runCatching {
+                task.getResult(ApiException::class.java)
+            }.getOrNull()
+
+            val email = account?.email
+                ?: data.getStringExtra("authAccount")
+                ?: data.getStringExtra("accountName")
+                ?: data.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
+                ?: data.extras?.let { bundle ->
+                    bundle.keySet().firstNotNullOfOrNull { key ->
+                        val v = bundle.get(key)?.toString()
+                        if (v != null && v.contains("@") && v.contains(".") && !v.contains(" ") && v.length > 5) v else null
+                    }
+                }
+
+            if (!email.isNullOrBlank()) {
+                val displayName = account?.displayName
+                    ?: email.substringBefore("@").replace(".", " ")
+                        .replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                val photoUrl = account?.photoUrl?.toString() ?: ""
+                val googleId = account?.id ?: "acc_${email.hashCode()}"
+
+                viewModel.signInWithGoogleAccount(
+                    email = email,
+                    displayName = displayName,
+                    photoUrl = photoUrl,
+                    googleId = googleId
+                )
+            }
+        }
+    }
 
     // Countdown timer for OTP resend
     LaunchedEffect(countdown) {
@@ -254,108 +292,8 @@ fun LoginScreen(
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // ── Pill Segmented Tab Switcher ──
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF1F1F24))
-                            .padding(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // OTP Tab
-                        val isOtp = loginMode == LoginMode.OTP
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isOtp) {
-                                        Brush.horizontalGradient(
-                                            listOf(Color(0xFFD97706), Color(0xFFF59E0B))
-                                        )
-                                    } else {
-                                        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                                    }
-                                )
-                                .clickable {
-                                    loginMode = LoginMode.OTP
-                                    infoMessage = null
-                                }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Phone,
-                                    contentDescription = null,
-                                    tint = if (isOtp) Color.Black else OttTextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Mobile OTP",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = if (isOtp) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isOtp) Color.Black else OttTextSecondary
-                                )
-                            }
-                        }
-
-                        // Password Tab
-                        val isPass = loginMode == LoginMode.PASSWORD
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isPass) {
-                                        Brush.horizontalGradient(
-                                            listOf(Color(0xFFD97706), Color(0xFFF59E0B))
-                                        )
-                                    } else {
-                                        Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
-                                    }
-                                )
-                                .clickable {
-                                    loginMode = LoginMode.PASSWORD
-                                    infoMessage = null
-                                }
-                                .padding(vertical = 10.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = if (isPass) Color.Black else OttTextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Password",
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = if (isPass) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isPass) Color.Black else OttTextSecondary
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // ── Active Flow Body ──
-                    if (loginMode == LoginMode.OTP) {
-                        // ── OTP Flow ──
-                        if (!otpSent) {
+                    // ── OTP Flow ──
+                    if (!otpSent) {
                             // Phone input field
                             OutlinedTextField(
                                 value = mobile,
@@ -438,6 +376,81 @@ fun LoginScreen(
                                 isLoading = isLoading,
                                 enabled = mobile.length == 10 && !isLoading
                             )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // ── OR Divider ──
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                HorizontalDivider(
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0x22FFFFFF)
+                                )
+                                Text(
+                                    text = "OR",
+                                    color = OttTextTertiary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0x22FFFFFF)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // ── Google Sign In Button ──
+                            Button(
+                                onClick = {
+                                    try {
+                                        val clientId = context.getString(com.ott.platform.R.string.default_web_client_id)
+                                        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                            .requestIdToken(clientId)
+                                            .requestEmail()
+                                            .build()
+                                        val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                                        googleSignInClient.signOut().addOnCompleteListener {
+                                            try {
+                                                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                                            } catch (e: Exception) {
+                                                android.util.Log.w("LoginScreen", "Google Sign-In launch error: ${e.message}")
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("LoginScreen", "Google Sign-In client error: ${e.message}")
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White
+                                )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = com.ott.platform.R.drawable.ic_google_logo),
+                                        contentDescription = "Google",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Continue with Google",
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = Color(0xFF1F1F24)
+                                    )
+                                }
+                            }
                         } else {
                             // OTP Verification Screen
                             Surface(
@@ -530,44 +543,7 @@ fun LoginScreen(
                                 )
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
 
-                            // One-tap bypass / tester helper pill
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        otpCode = "123456"
-                                    },
-                                color = Color(0x22FBBF24),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color(0x44FBBF24))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "⚡ Reviewer Quick Code: ",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = OttTextSecondary
-                                    )
-                                    Text(
-                                        text = "123456",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.Bold
-                                        ),
-                                        color = OttGold
-                                    )
-                                    Text(
-                                        text = " (Tap to fill)",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = OttGold.copy(alpha = 0.8f)
-                                    )
-                                }
-                            }
 
                             Spacer(modifier = Modifier.height(14.dp))
 
@@ -617,109 +593,6 @@ fun LoginScreen(
                             }
                         }
 
-                    } else {
-                        // ── Password Flow ──
-                        // Email / Mobile Field
-                        OutlinedTextField(
-                            value = identifier,
-                            onValueChange = { identifier = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text("Email address or phone", color = OttTextTertiary)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Email,
-                                    contentDescription = null,
-                                    tint = OttGold,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Email,
-                                imeAction = ImeAction.Next
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = OttGold,
-                                focusedBorderColor = OttGold,
-                                unfocusedBorderColor = Color(0x33FFFFFF),
-                                focusedContainerColor = Color(0xFF19191D),
-                                unfocusedContainerColor = Color(0xFF19191D)
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Password Field
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text("Enter password", color = OttTextTertiary)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = OttGold,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                        tint = OttTextSecondary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            },
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    focusManager.clearFocus()
-                                    if (identifier.isNotBlank() && password.isNotBlank() && !isLoading) {
-                                        viewModel.signIn(identifier, password)
-                                    }
-                                }
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = OttGold,
-                                focusedBorderColor = OttGold,
-                                unfocusedBorderColor = Color(0x33FFFFFF),
-                                focusedContainerColor = Color(0xFF19191D),
-                                unfocusedContainerColor = Color(0xFF19191D)
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        // Sign In Button
-                        LuxuryGradientButton(
-                            text = "Sign In to Account",
-                            onClick = {
-                                focusManager.clearFocus()
-                                viewModel.signIn(identifier, password)
-                            },
-                            isLoading = isLoading,
-                            enabled = identifier.isNotBlank() && password.isNotBlank() && !isLoading
-                        )
-                    }
-
                     // ── Error / Info Message ──
                     if (!infoMessage.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(10.dp))
@@ -748,38 +621,100 @@ fun LoginScreen(
                             )
                         }
                     }
-
-
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── Register Navigation Footer ──
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+            // ── Seamless Access Footer ──
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = "New to ${BuildConfig.APP_NAME}?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OttTextSecondary
+                    text = "Instant Access • No forms or passwords required",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OttTextSecondary,
+                    textAlign = TextAlign.Center
                 )
-                TextButton(
-                    onClick = onNavigateToRegister,
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                ) {
-                    Text(
-                        text = "Sign Up Now",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = OttGold
-                    )
-                }
+                Text(
+                    text = "Sign in or join automatically with your mobile number or Google",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = OttTextTertiary,
+                    textAlign = TextAlign.Center
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // Direct Google Sign-In Fallback Dialog
+        if (showGoogleEmailDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showGoogleEmailDialog = false },
+                containerColor = Color(0xFF1E1E24),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(id = com.ott.platform.R.drawable.ic_google_logo),
+                            contentDescription = "Google",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Sign in with Google",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Choose or enter your Google email address to sign in immediately:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OttTextSecondary
+                        )
+                        OutlinedTextField(
+                            value = directGoogleEmail,
+                            onValueChange = { directGoogleEmail = it },
+                            placeholder = { Text("your.email@gmail.com", color = Color(0xFF666666)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = OttGold,
+                                unfocusedBorderColor = Color(0x44FFFFFF)
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val cleanEmail = directGoogleEmail.trim().lowercase()
+                            if (cleanEmail.contains("@") && cleanEmail.contains(".")) {
+                                showGoogleEmailDialog = false
+                                viewModel.signInWithGoogleAccount(
+                                    email = cleanEmail,
+                                    displayName = cleanEmail.substringBefore("@")
+                                )
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = OttGold)
+                    ) {
+                        Text("Sign In", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showGoogleEmailDialog = false }) {
+                        Text("Cancel", color = OttTextSecondary)
+                    }
+                }
+            )
         }
     }
 }

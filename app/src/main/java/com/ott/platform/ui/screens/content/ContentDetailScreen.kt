@@ -69,11 +69,10 @@ fun ContentDetailScreen(
 
     var isFullscreen by remember { mutableStateOf(false) }
 
-    // Load content metadata and authorize playback for fast start
+    // Load content metadata safely without triggering eager playback before user clicks Watch
     LaunchedEffect(contentId) {
-        if (contentId != null) {
+        if (!contentId.isNullOrBlank()) {
             detailViewModel.loadContent(contentId)
-            playbackViewModel.authorizeAndPlay(contentId)
         }
     }
 
@@ -211,14 +210,20 @@ fun ContentDetailScreen(
                     )
                 }
 
-                // Prominent Play Button over Poster
+                // Prominent Play Button over Poster (Only plays when clicked!)
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .size(68.dp)
                         .clip(CircleShape)
                         .background(OttGold)
-                        .clickable { enterFullscreen() },
+                        .clickable {
+                            val id = content?.id?.takeIf { it.isNotBlank() } ?: contentId
+                            if (!id.isNullOrBlank()) {
+                                playbackViewModel.authorizeAndPlay(id, isTrailer = false)
+                            }
+                            enterFullscreen()
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -238,7 +243,7 @@ fun ContentDetailScreen(
                 ) {
                     // Movie Title
                     Text(
-                        text = content.title,
+                        text = content.title.ifBlank { "Movie Details" },
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
@@ -247,12 +252,16 @@ fun ContentDetailScreen(
                     Spacer(modifier = Modifier.height(spacing.sm))
 
                     // Badges Row: U/A, HD, Accurate Duration, Year, Language
-                    val durationText = if (content.duration in 1..7199L) {
-                        content.formattedDuration()
-                    } else if (content.title.contains("Bhullakad", ignoreCase = true)) {
+                    val durationText = try {
+                        if (content.duration in 1..7199L) {
+                            content.formattedDuration()
+                        } else if (content.title.contains("Bhullakad", ignoreCase = true)) {
+                            "21m"
+                        } else {
+                            content.formattedDuration().ifBlank { "21m" }
+                        }
+                    } catch (e: Exception) {
                         "21m"
-                    } else {
-                        content.formattedDuration().ifBlank { "21m" }
                     }
 
                     Row(
@@ -269,9 +278,15 @@ fun ContentDetailScreen(
 
                     Spacer(modifier = Modifier.height(spacing.lg))
 
-                    // Primary Watch Movie Button (Launches Fullscreen)
+                    // Primary Watch Movie Button (Triggers auth + Launches Fullscreen)
                     Button(
-                        onClick = { enterFullscreen() },
+                        onClick = {
+                            val id = content.id.takeIf { it.isNotBlank() } ?: contentId
+                            if (!id.isNullOrBlank()) {
+                                playbackViewModel.authorizeAndPlay(id, isTrailer = false)
+                            }
+                            enterFullscreen()
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -323,7 +338,13 @@ fun ContentDetailScreen(
                         }
 
                         OutlinedButton(
-                            onClick = { enterFullscreen() },
+                            onClick = {
+                                val id = content.id.takeIf { it.isNotBlank() } ?: contentId
+                                if (!id.isNullOrBlank()) {
+                                    playbackViewModel.authorizeAndPlay(id, isTrailer = true)
+                                }
+                                enterFullscreen()
+                            },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
@@ -350,8 +371,10 @@ fun ContentDetailScreen(
 
                     val fullDescription = if (content.description.equals("Comedy", ignoreCase = true)) {
                         "A hilarious comedy revolving around police station chaos, misunderstandings, and non-stop laughter as a forgetful officer gets caught in a series of comedic blunders."
-                    } else {
+                    } else if (content.description.isNotBlank()) {
                         content.description
+                    } else {
+                        "Experience high-definition premium entertainment exclusively on Chumbak OTT."
                     }
 
                     Text(
@@ -380,7 +403,7 @@ fun ContentDetailScreen(
                         }
                     }
 
-                    // More Like This Recommendations Section
+                    // More Like This Recommendations Section (safe, unkeyed items to prevent duplicate key crashes)
                     if (uiState.relatedContent.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(spacing.xl))
                         Text(
@@ -394,7 +417,7 @@ fun ContentDetailScreen(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(spacing.sm)
                         ) {
-                            items(uiState.relatedContent, key = { it.id }) { related ->
+                            items(uiState.relatedContent) { related ->
                                 ContentCard(
                                     title = related.title,
                                     posterUrl = related.posterUrl.takeIf { it.isNotBlank() } ?: related.backdropUrl,
@@ -405,6 +428,39 @@ fun ContentDetailScreen(
                     }
 
                     Spacer(modifier = Modifier.height(spacing.xl))
+                }
+            } else if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = OttGold)
+                }
+            } else if (uiState.error != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = uiState.error ?: "Unable to load movie details",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            if (!contentId.isNullOrBlank()) {
+                                detailViewModel.loadContent(contentId)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = OttGold, contentColor = Color.Black)
+                    ) {
+                        Text("Retry", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

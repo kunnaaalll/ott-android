@@ -6,9 +6,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.ott.platform.ui.screens.auth.AuthState
 import com.ott.platform.ui.screens.auth.AuthViewModel
 import com.ott.platform.ui.screens.auth.LoginScreen
@@ -117,6 +119,9 @@ fun MainNavGraph(
                 },
                 onSignOut = {
                     authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 },
                 onNavigateToSubscription = {
                     navController.navigate(Screen.Subscription.route)
@@ -124,7 +129,15 @@ fun MainNavGraph(
             )
         }
         
-        composable(Screen.ContentDetail.route) { backStackEntry ->
+        composable(
+            route = Screen.ContentDetail.route,
+            arguments = listOf(
+                navArgument("contentId") {
+                    type = NavType.StringType
+                    nullable = true
+                }
+            )
+        ) { backStackEntry ->
             val contentId = backStackEntry.arguments?.getString("contentId")
             ContentDetailScreen(
                 contentId = contentId,

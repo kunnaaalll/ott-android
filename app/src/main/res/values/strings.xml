@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Chumbak OTT</string>
-    <string name="default_web_client_id">YOUR_CLIENT_ID_HERE</string>
+    <string name="default_web_client_id">651762637693-0b0uumgel2ga6qcb32aj0eng3khj2dtu.apps.googleusercontent.com</string>
     <string name="com.google.firebase.crashlytics.mapping_file_id">none</string>
     <string name="com.crashlytics.android.build_id">1</string>
+    <!-- Meta (Facebook) App Events Configuration -->
+    <string name="facebook_app_id">4498475657058724</string>
+    <string name="facebook_client_token">59f11eccd390e813d5a3e5ed1159fca7</string>
 </resources>
