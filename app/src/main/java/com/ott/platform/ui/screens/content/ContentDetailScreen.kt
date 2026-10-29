@@ -218,9 +218,15 @@ fun ContentDetailScreen(
                         .clip(CircleShape)
                         .background(OttGold)
                         .clickable {
-                            val id = content?.id?.takeIf { it.isNotBlank() } ?: contentId
-                            if (!id.isNullOrBlank()) {
-                                playbackViewModel.authorizeAndPlay(id, isTrailer = false)
+                            val targetId = if (uiState.isSeries) {
+                                uiState.selectedSeason?.episodes?.firstOrNull()?.id
+                                    ?: content?.id
+                                    ?: contentId
+                            } else {
+                                content?.id?.takeIf { it.isNotBlank() } ?: contentId
+                            }
+                            if (!targetId.isNullOrBlank()) {
+                                playbackViewModel.authorizeAndPlay(targetId, isTrailer = false)
                             }
                             enterFullscreen()
                         },
@@ -228,7 +234,7 @@ fun ContentDetailScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = "Play Movie",
+                        contentDescription = "Play Content",
                         tint = Color.Black,
                         modifier = Modifier.size(38.dp)
                     )
@@ -241,9 +247,9 @@ fun ContentDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = spacing.screenPadding, vertical = spacing.sm)
                 ) {
-                    // Movie Title
+                    // Movie / Series Title
                     Text(
-                        text = content.title.ifBlank { "Movie Details" },
+                        text = content.getCleanTitle().ifBlank { if (content.isSeries()) "Series Details" else "Movie Details" },
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
@@ -251,9 +257,11 @@ fun ContentDetailScreen(
 
                     Spacer(modifier = Modifier.height(spacing.sm))
 
-                    // Badges Row: U/A, HD, Accurate Duration, Year, Language
+                    // Badges Row: U/A, HD, Accurate Duration / Series tag, Year, Language
                     val durationText = try {
-                        if (content.duration in 1..7199L) {
+                        if (content.isSeries()) {
+                            "Web Series"
+                        } else if (content.duration in 1..7199L) {
                             content.formattedDuration()
                         } else if (content.title.contains("Bhullakad", ignoreCase = true)) {
                             "21m"
@@ -261,7 +269,7 @@ fun ContentDetailScreen(
                             content.formattedDuration().ifBlank { "21m" }
                         }
                     } catch (e: Exception) {
-                        "21m"
+                        if (content.isSeries()) "Web Series" else "21m"
                     }
 
                     Row(
@@ -278,12 +286,17 @@ fun ContentDetailScreen(
 
                     Spacer(modifier = Modifier.height(spacing.lg))
 
-                    // Primary Watch Movie Button (Triggers auth + Launches Fullscreen)
+                    // Primary Watch Button (Triggers auth + Launches Fullscreen)
                     Button(
                         onClick = {
-                            val id = content.id.takeIf { it.isNotBlank() } ?: contentId
-                            if (!id.isNullOrBlank()) {
-                                playbackViewModel.authorizeAndPlay(id, isTrailer = false)
+                            val targetId = if (uiState.isSeries) {
+                                uiState.selectedSeason?.episodes?.firstOrNull()?.id
+                                    ?: content.id
+                            } else {
+                                content.id.takeIf { it.isNotBlank() } ?: contentId
+                            }
+                            if (!targetId.isNullOrBlank()) {
+                                playbackViewModel.authorizeAndPlay(targetId, isTrailer = false)
                             }
                             enterFullscreen()
                         },
@@ -303,7 +316,7 @@ fun ContentDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Watch Movie",
+                            text = if (content.isSeries()) "Watch Series" else "Watch Movie",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -403,6 +416,83 @@ fun ContentDetailScreen(
                         }
                     }
 
+                    // Episodes & Seasons section for Web Series
+                    if (uiState.isSeries && uiState.seasons.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(spacing.xl))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Episodes",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            val epCount = uiState.selectedSeason?.episodes?.size ?: 0
+                            Text(
+                                text = "$epCount ${if (epCount == 1) "Episode" else "Episodes"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OttGold,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(spacing.sm))
+
+                        // Season Selector Pills (Always visible for clarity)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(uiState.seasons) { season ->
+                                val isSelected = season.id == uiState.selectedSeason?.id
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(if (isSelected) OttGold else Color(0xFF1E2430))
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) OttGold else Color.White.copy(alpha = 0.2f),
+                                            RoundedCornerShape(20.dp)
+                                        )
+                                        .clickable { detailViewModel.selectSeason(season) }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Season ${season.seasonNumber}",
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(spacing.md))
+
+                        val episodes = uiState.selectedSeason?.episodes ?: emptyList()
+                        if (episodes.isNotEmpty()) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                episodes.forEach { ep ->
+                                    EpisodeItemCard(
+                                        episode = ep,
+                                        seriesPosterUrl = content.posterUrl.ifBlank { content.backdropUrl },
+                                        onPlay = {
+                                            playbackViewModel.authorizeAndPlay(ep.id, isTrailer = false)
+                                            enterFullscreen()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // More Like This Recommendations Section (safe, unkeyed items to prevent duplicate key crashes)
                     if (uiState.relatedContent.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(spacing.xl))
@@ -499,5 +589,126 @@ private fun InfoRow(label: String, value: String) {
             color = Color.White,
             style = MaterialTheme.typography.bodySmall
         )
+    }
+}
+
+@Composable
+private fun EpisodeItemCard(
+    episode: com.ott.platform.data.model.Episode,
+    seriesPosterUrl: String,
+    onPlay: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onPlay() },
+        colors = CardDefaults.cardColors(containerColor = OttSurfaceVariant),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Episode Thumbnail with Play icon overlay
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF141923))
+                ) {
+                    val thumbUrl = episode.posterUrl.ifBlank { seriesPosterUrl }
+                    if (thumbUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = thumbUrl,
+                            contentDescription = episode.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+
+                    // Scrim overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f))
+                    )
+
+                    // Play Button Circle
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(OttGold),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PlayArrow,
+                            contentDescription = "Play Episode",
+                            tint = Color.Black,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Duration pill
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = episode.formattedDuration(),
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Episode Title & Number
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Episode ${episode.episodeNumber}",
+                        color = OttGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = episode.title.ifBlank { "Episode ${episode.episodeNumber}" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2
+                    )
+                }
+            }
+
+            // Episode Description
+            if (episode.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = episode.description,
+                    color = OttTextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 3
+                )
+            }
+        }
     }
 }

@@ -52,19 +52,45 @@ class HomeViewModel @Inject constructor(
             try {
                 val featured = contentRepository.getFeaturedContent(tenantId)
                 val newReleases = contentRepository.getNewReleases(tenantId, 10)
-                val trending = contentRepository.getTrendingContent(tenantId, 10)
+                val rawTrending = contentRepository.getTrendingContent(tenantId, 10)
                 val hindi = contentRepository.getContentByLanguage(tenantId, "Hindi")
                 val english = contentRepository.getContentByLanguage(tenantId, "English")
-                val comedy = contentRepository.getContentByCategory(tenantId, "cat_comedy")
-                val action = contentRepository.getContentByCategory(tenantId, "cat_action")
-                val romance = contentRepository.getContentByCategory(tenantId, "cat_romance")
+                val rawComedy = contentRepository.getContentByCategory(tenantId, "cat_comedy")
+                val rawAction = contentRepository.getContentByCategory(tenantId, "cat_action")
+                val rawRomance = contentRepository.getContentByCategory(tenantId, "cat_romance")
                 val popular = contentRepository.getPopularContent(tenantId)
+
+                // Diversify Trending: interleave movies and series so lead item differs from New Releases
+                val trendingMovies = rawTrending.filter { !it.isSeries() }
+                val trendingSeries = rawTrending.filter { it.isSeries() }
+                val diversifiedTrending = if (trendingMovies.isNotEmpty() && trendingSeries.isNotEmpty()) {
+                    val interleaved = mutableListOf<Content>()
+                    val maxLen = maxOf(trendingMovies.size, trendingSeries.size)
+                    for (i in 0 until maxLen) {
+                        if (i < trendingMovies.size) interleaved.add(trendingMovies[i])
+                        if (i < trendingSeries.size) interleaved.add(trendingSeries[i])
+                    }
+                    interleaved.take(10)
+                } else {
+                    rawTrending
+                }
+
+                // Diversify Comedy: lead with comedy movies (Chor No.1, Anadi Pati, Gyaanbaaz), then series
+                val comedy = rawComedy.filter { !it.isSeries() } + rawComedy.filter { it.isSeries() }
+
+                // Diversify Action: lead with action blockbuster movies (Vaadu Evaadu, Prince...)
+                val action = rawAction.filter { !it.isSeries() } + rawAction.filter { it.isSeries() }
+
+                // Diversify Romance: lead with Mona Darling and romance movies
+                val romanceSeries = rawRomance.filter { it.isSeries() }.reversed()
+                val romanceMovies = rawRomance.filter { !it.isSeries() }
+                val romance = romanceSeries + romanceMovies
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     featured = featured,
                     newReleases = newReleases,
-                    trending = trending,
+                    trending = diversifiedTrending,
                     hindiContent = hindi,
                     englishContent = english,
                     comedyContent = comedy,

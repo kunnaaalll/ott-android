@@ -58,6 +58,9 @@ data class Content(
     @PropertyName("publishedAt")
     val publishedAt: Timestamp? = null,
 
+    @PropertyName("contentType")
+    val contentType: String = "",
+
     @ServerTimestamp
     @PropertyName("createdAt")
     val createdAt: Timestamp? = null,
@@ -65,6 +68,19 @@ data class Content(
     @PropertyName("updatedAt")
     val updatedAt: Timestamp? = null,
 ) {
+    /**
+     * Determines whether this content item is a Web Series show.
+     */
+    fun isSeries(): Boolean = contentType.equals("SERIES", ignoreCase = true) || id.startsWith("series_") || id.startsWith("ser_")
+
+    /**
+     * Returns clean title stripping any legacy " S1:E1 - Episode 1" suffix.
+     */
+    fun getCleanTitle(): String {
+        val regex = Regex("""\s+S\d+:E\d+.*$""", RegexOption.IGNORE_CASE)
+        return title.replace(regex, "").trim()
+    }
+
     /**
      * Effective publication time for deterministic newest-first sorting.
      */

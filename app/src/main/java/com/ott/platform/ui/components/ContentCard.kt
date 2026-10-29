@@ -41,6 +41,11 @@ fun ContentCard(
     aspectRatio: Float = 0.7f, // Poster ratio (2:3 approx)
     showTitle: Boolean = true,
 ) {
+    val cleanTitle = androidx.compose.runtime.remember(title) {
+        val regex = Regex("""\s+S\d+:E\d+.*$""", RegexOption.IGNORE_CASE)
+        title.replace(regex, "").trim()
+    }
+
     Box(
         modifier = modifier
             .width(width)
@@ -52,7 +57,7 @@ fun ContentCard(
         // Poster image
         AsyncImage(
             model = posterUrl,
-            contentDescription = title,
+            contentDescription = cleanTitle,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
@@ -75,7 +80,7 @@ fun ContentCard(
                     .padding(horizontal = 8.dp, vertical = 8.dp),
             ) {
                 Text(
-                    text = title,
+                    text = cleanTitle,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                         fontSize = 13.sp,

@@ -36,6 +36,9 @@ interface ContentRepository {
     /** Get popular content. */
     suspend fun getPopularContent(tenantId: String, limit: Int = 20): List<Content>
 
+    /** Get seasons and episodes hierarchy for a web series. */
+    suspend fun getSeriesHierarchy(seriesId: String): com.ott.platform.data.model.SeriesHierarchy?
+
     // ── Admin Operations ──────────────────────────────────────────
 
     /** Observe all content (including drafts and archived) for admin view. */

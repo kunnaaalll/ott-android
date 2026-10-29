@@ -16,7 +16,10 @@ data class ContentDetailUiState(
     val relatedContent: List<Content> = emptyList(),
     val isInMyList: Boolean = false,
     val isLoading: Boolean = true,
-    val error: String? = null
+    val error: String? = null,
+    val seasons: List<com.ott.platform.data.model.Season> = emptyList(),
+    val selectedSeason: com.ott.platform.data.model.Season? = null,
+    val isSeries: Boolean = false
 )
 
 @HiltViewModel
@@ -48,6 +51,49 @@ class ContentDetailViewModel @Inject constructor(
                 }
 
                 if (content != null) {
+                    val isSeries = content.isSeries()
+                    var seasonsList = emptyList<com.ott.platform.data.model.Season>()
+
+                    if (isSeries) {
+                        try {
+                            val hierarchy = contentRepository.getSeriesHierarchy(content.id)
+                            if (hierarchy != null && hierarchy.seasons.isNotEmpty()) {
+                                seasonsList = hierarchy.seasons
+                            }
+                        } catch (e: Exception) {
+                            // Non-fatal fallback
+                        }
+
+                        // Fallback: If server returned no seasons, synthesize Season 1 with Episode 1
+                        if (seasonsList.isEmpty()) {
+                            val defaultEp = com.ott.platform.data.model.Episode(
+                                id = content.id,
+                                seriesId = content.id,
+                                seasonId = "season_01",
+                                episodeNumber = 1,
+                                title = "Episode 1: Pilot",
+                                description = content.description,
+                                duration = content.duration,
+                                tenantId = content.tenantId,
+                                status = content.status,
+                                mainPlaybackAsset = content.mainPlaybackAsset,
+                                posterUrl = content.posterUrl.ifBlank { content.backdropUrl }
+                            )
+                            seasonsList = listOf(
+                                com.ott.platform.data.model.Season(
+                                    id = "season_01",
+                                    seriesId = content.id,
+                                    seasonNumber = 1,
+                                    title = "Season 1",
+                                    description = "Season 1 of ${content.getCleanTitle()}",
+                                    tenantId = content.tenantId,
+                                    episodeCount = 1,
+                                    episodes = listOf(defaultEp)
+                                )
+                            )
+                        }
+                    }
+
                     // Fetch related content safely and deduplicate
                     val related = if (content.categoryIds.isNotEmpty()) {
                         try {
@@ -63,7 +109,10 @@ class ContentDetailViewModel @Inject constructor(
                         it.copy(
                             content = content,
                             relatedContent = related,
-                            isLoading = false
+                            isLoading = false,
+                            isSeries = isSeries,
+                            seasons = seasonsList,
+                            selectedSeason = seasonsList.firstOrNull()
                         )
                     }
                     
@@ -89,6 +138,10 @@ class ContentDetailViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, error = e.localizedMessage) }
             }
         }
+    }
+
+    fun selectSeason(season: com.ott.platform.data.model.Season) {
+        _uiState.update { it.copy(selectedSeason = season) }
     }
 
     fun toggleMyList(contentId: String) {

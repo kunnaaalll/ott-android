@@ -128,23 +128,6 @@ class SubscriptionViewModel @Inject constructor(
                         SubscriptionStatus.GRACE_PERIOD -> {
                             if (subscription.isActive()) {
                                 _subscriptionState.value = SubscriptionState.Active(subscription)
-
-                                // Emit Meta App Event (fb_mobile_purchase) with deduplication order_id
-                                val orderId = subscription.providerSubscriptionId?.takeIf { it.isNotBlank() }
-                                    ?: subscription.id.removePrefix("sub_").takeIf { it.isNotBlank() }
-                                if (!orderId.isNullOrBlank()) {
-                                    val matchedPlan = _plans.value.firstOrNull { it.id == subscription.planId }
-                                        ?: com.ott.platform.data.model.PlanDefaults.getPlans(effectiveUser.tenantId).firstOrNull { it.id == subscription.planId }
-                                    val planPrice = matchedPlan?.price ?: 0.0
-                                    val planName = matchedPlan?.name ?: "Subscription Pass"
-                                    metaAnalyticsTracker.logPurchase(
-                                        orderId = orderId,
-                                        planId = subscription.planId,
-                                        planName = planName,
-                                        amount = planPrice,
-                                        currency = "INR"
-                                    )
-                                }
                             } else {
                                 _subscriptionState.value = SubscriptionState.Expired
                             }

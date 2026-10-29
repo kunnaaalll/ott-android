@@ -368,7 +368,7 @@ private fun HeroBannerCarousel(
 
                     // Title - Large, bold, and high-contrast
                     Text(
-                        text = content.title,
+                        text = content.getCleanTitle(),
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Black,
@@ -388,10 +388,15 @@ private fun HeroBannerCarousel(
 
                     // Duration and Language
                     val metaParts = mutableListOf<String>()
-                    val dur = content.formattedDuration()
-                    if (dur.isNotBlank()) metaParts.add(dur)
+                    if (content.isSeries()) {
+                        metaParts.add("Web Series")
+                    } else {
+                        val dur = content.formattedDuration()
+                        if (dur.isNotBlank()) metaParts.add(dur)
+                    }
                     if (content.language.isNotBlank()) metaParts.add(content.language)
-                    if (content.description.isNotBlank()) metaParts.add(content.description)
+                    val cat = content.categoryIds.firstOrNull()?.replace("cat_", "")?.replaceFirstChar { it.uppercase() }
+                    if (!cat.isNullOrBlank()) metaParts.add(cat)
                     Text(
                         text = metaParts.joinToString(" • "),
                         style = MaterialTheme.typography.bodyMedium.copy(
@@ -501,7 +506,7 @@ private fun ContentRow(
         ) {
             items(items, key = { it.id }) { content ->
                 ContentCard(
-                    title = content.title,
+                    title = content.getCleanTitle(),
                     posterUrl = content.posterUrl.takeIf { it.isNotBlank() } ?: content.backdropUrl,
                     onClick = { onItemClick(content.id) }
                 )

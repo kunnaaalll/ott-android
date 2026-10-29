@@ -822,6 +822,90 @@ class WebsiteApiClient @Inject constructor(
         }
     }
 
+    suspend fun fetchSeriesHierarchy(seriesId: String): Result<com.ott.platform.data.model.SeriesHierarchy> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl/api/series?seriesId=${seriesId.trim()}")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty(APP_CLIENT_HEADER, APP_CLIENT_VALUE)
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode == 200) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(text)
+                if (root.optBoolean("success", false) && root.has("hierarchy")) {
+                    val hierarchyObj = root.getJSONObject("hierarchy")
+                    val seriesObj = hierarchyObj.getJSONObject("series")
+                    val series = parseContent(seriesObj)
+
+                    val seasonsArray = hierarchyObj.optJSONArray("seasons") ?: JSONArray()
+                    val seasonsList = mutableListOf<com.ott.platform.data.model.Season>()
+
+                    for (i in 0 until seasonsArray.length()) {
+                        val seasonObj = seasonsArray.getJSONObject(i)
+                        val epArray = seasonObj.optJSONArray("episodes") ?: JSONArray()
+                        val epList = mutableListOf<com.ott.platform.data.model.Episode>()
+
+                        for (j in 0 until epArray.length()) {
+                            val epObj = epArray.getJSONObject(j)
+                            val mainAsset = epObj.optJSONObject("mainPlaybackAsset")?.let { assetObj ->
+                                VideoAsset(
+                                    contentId = assetObj.optString("contentId", epObj.optString("id")),
+                                    tenantId = assetObj.optString("tenantId", "tenant_default"),
+                                    assetType = assetObj.optString("assetType", "MAIN_VIDEO"),
+                                    hlsPath = assetObj.optString("hlsPath", ""),
+                                    duration = assetObj.optLong("duration", epObj.optLong("duration", 0L))
+                                )
+                            }
+
+                            epList.add(
+                                com.ott.platform.data.model.Episode(
+                                    id = epObj.optString("id"),
+                                    seriesId = epObj.optString("seriesId", series.id),
+                                    seasonId = epObj.optString("seasonId", seasonObj.optString("id")),
+                                    episodeNumber = epObj.optInt("episodeNumber", j + 1),
+                                    title = epObj.optString("title", "Episode ${j + 1}"),
+                                    description = epObj.optString("description", ""),
+                                    duration = epObj.optLong("duration", 0L),
+                                    tenantId = epObj.optString("tenantId", series.tenantId),
+                                    status = epObj.optString("status", "PUBLISHED"),
+                                    mainPlaybackAsset = mainAsset,
+                                    posterUrl = series.posterUrl.ifBlank { series.backdropUrl }
+                                )
+                            )
+                        }
+
+                        seasonsList.add(
+                            com.ott.platform.data.model.Season(
+                                id = seasonObj.optString("id"),
+                                seriesId = seasonObj.optString("seriesId", series.id),
+                                seasonNumber = seasonObj.optInt("seasonNumber", i + 1),
+                                title = seasonObj.optString("title", "Season ${i + 1}"),
+                                description = seasonObj.optString("description", ""),
+                                tenantId = seasonObj.optString("tenantId", series.tenantId),
+                                episodeCount = epList.size,
+                                status = seasonObj.optString("status", "PUBLISHED"),
+                                episodes = epList
+                            )
+                        )
+                    }
+
+                    Result.success(com.ott.platform.data.model.SeriesHierarchy(series = series, seasons = seasonsList))
+                } else {
+                    Result.failure(Exception("Series hierarchy not found"))
+                }
+            } else {
+                Result.failure(Exception("Series request returned status $responseCode"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun authorizePlayback(
         userId: String,
         contentId: String,

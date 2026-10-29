@@ -81,7 +81,7 @@ class SubscriptionViewModelTest {
     }
 
     @Test
-    fun `subscription state becomes active when user has active subscription and emits Meta purchase event`() = runTest {
+    fun `subscription state becomes active when user has active subscription without falsely emitting Meta purchase event`() = runTest {
         val user = User(id = "user1", tenantId = "tenant1")
         val firebaseUser = mockk<FirebaseUser>(relaxed = true) {
             every { uid } returns "user1"
@@ -103,15 +103,8 @@ class SubscriptionViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(viewModel.subscriptionState.value is SubscriptionState.Active)
-        verify {
-            metaAnalyticsTracker.logPurchase(
-                orderId = "order_12345",
-                planId = "plan1",
-                planName = "Monthly Pass",
-                amount = 299.0,
-                currency = "INR"
-            )
-        }
+        // Subscriptions loaded from cache/repository must NEVER emit purchase events
+        verify(exactly = 0) { metaAnalyticsTracker.logPurchase(any(), any(), any(), any(), any()) }
     }
 
     private val handoff = CheckoutHandoff(

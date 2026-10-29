@@ -351,6 +351,14 @@ class ContentRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getSeriesHierarchy(seriesId: String): com.ott.platform.data.model.SeriesHierarchy? {
+        val result = websiteApiClient.fetchSeriesHierarchy(seriesId)
+        if (result.isSuccess) {
+            return result.getOrNull()
+        }
+        return null
+    }
+
     override suspend fun saveContent(content: Content) {
         val docRef = if (content.id.isEmpty()) contentCollection.document() else contentCollection.document(content.id)
         docRef.set(content).await()
