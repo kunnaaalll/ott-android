@@ -638,6 +638,9 @@ class WebsiteApiClient @Inject constructor(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
             }
@@ -667,6 +670,9 @@ class WebsiteApiClient @Inject constructor(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
             }
@@ -696,6 +702,9 @@ class WebsiteApiClient @Inject constructor(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
             }
@@ -726,6 +735,9 @@ class WebsiteApiClient @Inject constructor(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
             }
@@ -756,6 +768,9 @@ class WebsiteApiClient @Inject constructor(
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty("Cache-Control", "no-cache")
+                setRequestProperty("Pragma", "no-cache")
+                useCaches = false
                 connectTimeout = 8000
                 readTimeout = 8000
             }

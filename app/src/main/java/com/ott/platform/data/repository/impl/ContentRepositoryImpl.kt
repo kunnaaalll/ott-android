@@ -275,6 +275,10 @@ class ContentRepositoryImpl @Inject constructor(
             if (trending.isNotEmpty()) {
                 return trending.sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id }).take(limit)
             }
+            return cmsResult.getOrThrow()
+                .filter { it.isPublished() }
+                .sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id })
+                .take(limit)
         }
 
         return try {
