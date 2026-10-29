@@ -87,9 +87,15 @@ fun LoginScreen(
         val data = result.data
         if (data != null) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-            val account = runCatching {
+            var apiException: ApiException? = null
+            val account = try {
                 task.getResult(ApiException::class.java)
-            }.getOrNull()
+            } catch (e: ApiException) {
+                apiException = e
+                null
+            } catch (e: Exception) {
+                null
+            }
 
             val email = account?.email
                 ?: data.getStringExtra("authAccount")
@@ -115,6 +121,16 @@ fun LoginScreen(
                     photoUrl = photoUrl,
                     googleId = googleId
                 )
+            } else {
+                val statusCode = apiException?.statusCode
+                val message = when (statusCode) {
+                    10 -> "Google Sign-In Error (10): Release SHA-1 fingerprint is not registered in Firebase Console."
+                    12500 -> "Google Sign-In Error (12500): Sign in failed. Check Google Play Services."
+                    7 -> "Network error during Google Sign-In. Please check your connection."
+                    else -> "Google account sign-in failed${if (statusCode != null) " (code: $statusCode)" else ""}."
+                }
+                android.util.Log.e("LoginScreen", "Google Sign-In failed: $message, ex=$apiException")
+                infoMessage = message
             }
         }
     }

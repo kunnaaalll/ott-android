@@ -661,6 +661,124 @@ class WebsiteApiClient @Inject constructor(
         }
     }
 
+    suspend fun fetchNewReleases(limit: Int = 10, tenantId: String = "tenant_chumbak"): Result<List<Content>> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl/api/content?platform=ANDROID&tenantId=$tenantId&newReleases=true&limit=$limit")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                val json = JSONObject(text)
+                val itemsArray = json.optJSONArray("items") ?: JSONArray()
+                val list = mutableListOf<Content>()
+                for (i in 0 until itemsArray.length()) {
+                    val itemJson = itemsArray.getJSONObject(i)
+                    list.add(parseContent(itemJson))
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception("New releases request returned status $responseCode"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchTrending(limit: Int = 20, tenantId: String = "tenant_chumbak"): Result<List<Content>> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl/api/content?platform=ANDROID&tenantId=$tenantId&trending=true&limit=$limit")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                val json = JSONObject(text)
+                val itemsArray = json.optJSONArray("items") ?: JSONArray()
+                val list = mutableListOf<Content>()
+                for (i in 0 until itemsArray.length()) {
+                    val itemJson = itemsArray.getJSONObject(i)
+                    list.add(parseContent(itemJson))
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception("Trending request returned status $responseCode"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchByLanguage(language: String, tenantId: String = "tenant_chumbak"): Result<List<Content>> = withContext(Dispatchers.IO) {
+        try {
+            val encodedLang = java.net.URLEncoder.encode(language.trim(), "UTF-8")
+            val url = URL("$baseUrl/api/content?platform=ANDROID&tenantId=$tenantId&language=$encodedLang")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                val json = JSONObject(text)
+                val itemsArray = json.optJSONArray("items") ?: JSONArray()
+                val list = mutableListOf<Content>()
+                for (i in 0 until itemsArray.length()) {
+                    val itemJson = itemsArray.getJSONObject(i)
+                    list.add(parseContent(itemJson))
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception("Language catalog request returned status $responseCode"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun fetchByGenre(genre: String, tenantId: String = "tenant_chumbak"): Result<List<Content>> = withContext(Dispatchers.IO) {
+        try {
+            val encodedGenre = java.net.URLEncoder.encode(genre.trim(), "UTF-8")
+            val url = URL("$baseUrl/api/content?platform=ANDROID&tenantId=$tenantId&genre=$encodedGenre")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+
+            val responseCode = conn.responseCode
+            if (responseCode in 200..299) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                val json = JSONObject(text)
+                val itemsArray = json.optJSONArray("items") ?: JSONArray()
+                val list = mutableListOf<Content>()
+                for (i in 0 until itemsArray.length()) {
+                    val itemJson = itemsArray.getJSONObject(i)
+                    list.add(parseContent(itemJson))
+                }
+                Result.success(list)
+            } else {
+                Result.failure(Exception("Genre catalog request returned status $responseCode"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun fetchContentById(contentId: String): Result<Content> = withContext(Dispatchers.IO) {
         try {
             val url = URL("$baseUrl/api/content?id=${contentId.trim()}")
@@ -902,6 +1020,56 @@ class WebsiteApiClient @Inject constructor(
             }
         } else null
 
+        val categoryList = mutableListOf<String>()
+        val catArray = json.optJSONArray("categoryIds") ?: json.optJSONArray("categories")
+        if (catArray != null) {
+            for (i in 0 until catArray.length()) {
+                val cat = catArray.optString(i)
+                if (!cat.isNullOrBlank()) categoryList.add(cat)
+            }
+        } else {
+            val singleCat = json.optString("categoryId", "")
+            if (singleCat.isNotBlank()) categoryList.add(singleCat)
+            val genreStr = json.optString("genre", "")
+            if (genreStr.isNotBlank()) {
+                genreStr.split(",").forEach {
+                    val trimmed = it.trim()
+                    if (trimmed.isNotBlank() && !categoryList.contains(trimmed)) {
+                        categoryList.add(trimmed)
+                    }
+                }
+            }
+        }
+
+        val language = json.optString("language", "")
+
+        val publishedAtStr = json.optString("publishedAt", "")
+        val publishedTimestamp = if (publishedAtStr.isNotBlank()) {
+            try {
+                Timestamp(Date(parseIsoDate(publishedAtStr)))
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
+        val createdAtStr = json.optString("createdAt", "")
+        val createdTimestamp = if (createdAtStr.isNotBlank()) {
+            try {
+                Timestamp(Date(parseIsoDate(createdAtStr)))
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
+        val updatedAtStr = json.optString("updatedAt", "")
+        val updatedTimestamp = if (updatedAtStr.isNotBlank()) {
+            try {
+                Timestamp(Date(parseIsoDate(updatedAtStr)))
+            } catch (e: Exception) {
+                null
+            }
+        } else null
+
         return Content(
             id = id,
             tenantId = tenantId,
@@ -915,6 +1083,11 @@ class WebsiteApiClient @Inject constructor(
             isTrending = isTrending,
             isNewRelease = isNewRelease,
             releaseDate = releaseTimestamp,
+            categoryIds = categoryList,
+            language = language,
+            publishedAt = publishedTimestamp,
+            createdAt = createdTimestamp,
+            updatedAt = updatedTimestamp,
             mainPlaybackAsset = mainAsset,
             trailerPlaybackAsset = trailerAsset
         )
@@ -922,17 +1095,30 @@ class WebsiteApiClient @Inject constructor(
 
     private fun parseIsoDate(iso: String): Long {
         if (iso.isBlank()) return System.currentTimeMillis()
+        val trimmed = iso.trim()
+        if (trimmed.length == 10 && trimmed.contains("-")) {
+            return try {
+                val format = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                format.parse(trimmed)?.time ?: System.currentTimeMillis()
+            } catch (e: Exception) {
+                System.currentTimeMillis()
+            }
+        }
         return try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                java.time.Instant.parse(iso).toEpochMilli()
+                try {
+                    java.time.Instant.parse(trimmed).toEpochMilli()
+                } catch (e: Exception) {
+                    java.time.OffsetDateTime.parse(trimmed).toInstant().toEpochMilli()
+                }
             } else {
-                val clean = if (iso.length >= 19) iso.substring(0, 19) else iso
+                val clean = if (trimmed.length >= 19) trimmed.substring(0, 19) else trimmed
                 val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
                 format.parse(clean)?.time ?: System.currentTimeMillis()
             }
         } catch (e: Exception) {
             try {
-                val clean = if (iso.length >= 19) iso.substring(0, 19) else iso
+                val clean = if (trimmed.length >= 19) trimmed.substring(0, 19) else trimmed
                 val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
                 format.parse(clean)?.time ?: System.currentTimeMillis()
             } catch (e2: Exception) {

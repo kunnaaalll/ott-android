@@ -126,10 +126,23 @@ class ContentRepositoryImpl @Inject constructor(
 
     override suspend fun getContentByCategory(tenantId: String, categoryId: String): List<Content> {
         val effectiveTenant = resolveTenant(tenantId)
+        val apiResult = websiteApiClient.fetchByGenre(categoryId, effectiveTenant)
+        if (apiResult.isSuccess && apiResult.getOrThrow().isNotEmpty()) {
+            return apiResult.getOrThrow()
+        }
+
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
-            val filtered = cmsResult.getOrThrow().filter { it.categoryIds.contains(categoryId) }
-            if (filtered.isNotEmpty()) return filtered
+            val target = categoryId.lowercase().replace("cat_", "")
+            val filtered = cmsResult.getOrThrow().filter { item ->
+                item.isPublished() && item.categoryIds.any { cat ->
+                    val c = cat.lowercase()
+                    c == target || c == "cat_$target" || c == categoryId.lowercase()
+                }
+            }
+            if (filtered.isNotEmpty()) {
+                return filtered.sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id })
+            }
         }
 
         return try {
@@ -147,11 +160,43 @@ class ContentRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getContentByLanguage(tenantId: String, language: String): List<Content> {
+        val effectiveTenant = resolveTenant(tenantId)
+        val apiResult = websiteApiClient.fetchByLanguage(language, effectiveTenant)
+        if (apiResult.isSuccess && apiResult.getOrThrow().isNotEmpty()) {
+            return apiResult.getOrThrow()
+        }
+
+        val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
+        if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
+            val filtered = cmsResult.getOrThrow().filter { item ->
+                item.isPublished() && item.language.equals(language, ignoreCase = true)
+            }
+            if (filtered.isNotEmpty()) {
+                return filtered.sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id })
+            }
+        }
+
+        return try {
+            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                contentCollection
+                    .whereEqualTo("tenantId", effectiveTenant)
+                    .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                    .whereEqualTo("language", language)
+                    .get()
+                    .await()
+                    .toObjects(Content::class.java)
+            } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     override suspend fun getFeaturedContent(tenantId: String): List<Content> {
         val effectiveTenant = resolveTenant(tenantId)
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
-            val items = cmsResult.getOrThrow()
+            val items = cmsResult.getOrThrow().filter { it.isPublished() }
             val featured = items.filter { it.featured }
             return if (featured.isNotEmpty()) featured else items.take(5)
         }
@@ -174,28 +219,44 @@ class ContentRepositoryImpl @Inject constructor(
 
     override suspend fun getNewReleases(tenantId: String, limit: Int): List<Content> {
         val effectiveTenant = resolveTenant(tenantId)
+        val apiResult = websiteApiClient.fetchNewReleases(limit, effectiveTenant)
+        if (apiResult.isSuccess && apiResult.getOrThrow().isNotEmpty()) {
+            return apiResult.getOrThrow()
+        }
+
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
-            val items = cmsResult.getOrThrow()
-            val curatedNew = items.filter { it.isNewRelease }
-            return if (curatedNew.isNotEmpty()) {
-                curatedNew.take(limit)
-            } else {
-                items.sortedByDescending { it.releaseDate?.toDate()?.time ?: 0L }.take(limit)
-            }
+            return cmsResult.getOrThrow()
+                .filter { it.isPublished() }
+                .sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id })
+                .take(limit)
         }
 
         return try {
-            kotlinx.coroutines.withTimeoutOrNull(1500L) {
+            val list = kotlinx.coroutines.withTimeoutOrNull(1500L) {
                 contentCollection
                     .whereEqualTo("tenantId", effectiveTenant)
                     .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                    .orderBy("releaseDate", Query.Direction.DESCENDING)
+                    .orderBy("publishedAt", Query.Direction.DESCENDING)
                     .limit(limit.toLong())
                     .get()
                     .await()
                     .toObjects(Content::class.java)
-            } ?: emptyList()
+            }
+            if (!list.isNullOrEmpty()) {
+                list
+            } else {
+                kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                    contentCollection
+                        .whereEqualTo("tenantId", effectiveTenant)
+                        .whereEqualTo("status", ContentStatus.PUBLISHED.name)
+                        .orderBy("createdAt", Query.Direction.DESCENDING)
+                        .limit(limit.toLong())
+                        .get()
+                        .await()
+                        .toObjects(Content::class.java)
+                } ?: emptyList()
+            }
         } catch (e: Exception) {
             emptyList()
         }
@@ -203,14 +264,16 @@ class ContentRepositoryImpl @Inject constructor(
 
     override suspend fun getTrendingContent(tenantId: String, limit: Int): List<Content> {
         val effectiveTenant = resolveTenant(tenantId)
+        val apiResult = websiteApiClient.fetchTrending(limit, effectiveTenant)
+        if (apiResult.isSuccess && apiResult.getOrThrow().isNotEmpty()) {
+            return apiResult.getOrThrow()
+        }
+
         val cmsResult = websiteApiClient.fetchCatalog("ANDROID", effectiveTenant)
         if (cmsResult.isSuccess && cmsResult.getOrThrow().isNotEmpty()) {
-            val items = cmsResult.getOrThrow()
-            val curatedTrending = items.filter { it.isTrending }
-            return if (curatedTrending.isNotEmpty()) {
-                curatedTrending.take(limit)
-            } else {
-                items.take(limit)
+            val trending = cmsResult.getOrThrow().filter { it.isPublished() && it.isTrending }
+            if (trending.isNotEmpty()) {
+                return trending.sortedWith(compareByDescending<Content> { it.getEffectivePublishTime() }.thenByDescending { it.id }).take(limit)
             }
         }
 
@@ -219,7 +282,7 @@ class ContentRepositoryImpl @Inject constructor(
                 contentCollection
                     .whereEqualTo("tenantId", effectiveTenant)
                     .whereEqualTo("status", ContentStatus.PUBLISHED.name)
-                    .orderBy("updatedAt", Query.Direction.DESCENDING)
+                    .whereEqualTo("isTrending", true)
                     .limit(limit.toLong())
                     .get()
                     .await()

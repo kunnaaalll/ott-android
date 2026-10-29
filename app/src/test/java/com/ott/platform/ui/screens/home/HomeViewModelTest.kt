@@ -37,6 +37,8 @@ class HomeViewModelTest {
         coEvery { contentRepository.getTrendingContent(any(), any()) } returns mockContent
         coEvery { contentRepository.getPopularContent(any(), any()) } returns mockContent
         coEvery { contentRepository.getNewReleases(any(), any()) } returns mockContent
+        coEvery { contentRepository.getContentByLanguage(any(), any()) } returns mockContent
+        coEvery { contentRepository.getContentByCategory(any(), any()) } returns mockContent
 
         viewModel = HomeViewModel(contentRepository)
         advanceUntilIdle()
@@ -47,6 +49,15 @@ class HomeViewModelTest {
         assertEquals(mockContent, state.trending)
         assertEquals(mockContent, state.popular)
         assertEquals(mockContent, state.newReleases)
+        assertEquals(mockContent, state.hindiContent)
+        assertEquals(mockContent, state.englishContent)
+        assertEquals(mockContent, state.comedyContent)
+        assertEquals(mockContent, state.actionContent)
+        assertEquals(mockContent, state.romanceContent)
+        assertEquals("ALL", state.selectedLanguage)
         assertNull(state.error)
+
+        viewModel.setLanguage("Hindi")
+        assertEquals("Hindi", viewModel.uiState.value.selectedLanguage)
     }
 }

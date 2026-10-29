@@ -16,9 +16,15 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val featured: List<Content> = emptyList(),
     val continueWatching: List<Content> = emptyList(), // Optional for now
-    val trending: List<Content> = emptyList(),
-    val popular: List<Content> = emptyList(),
     val newReleases: List<Content> = emptyList(),
+    val trending: List<Content> = emptyList(),
+    val hindiContent: List<Content> = emptyList(),
+    val englishContent: List<Content> = emptyList(),
+    val comedyContent: List<Content> = emptyList(),
+    val actionContent: List<Content> = emptyList(),
+    val romanceContent: List<Content> = emptyList(),
+    val popular: List<Content> = emptyList(),
+    val selectedLanguage: String = "ALL", // "ALL", "Hindi", "English"
     val error: String? = null
 )
 
@@ -36,21 +42,35 @@ class HomeViewModel @Inject constructor(
         loadHomeContent()
     }
 
+    fun setLanguage(language: String) {
+        _uiState.value = _uiState.value.copy(selectedLanguage = language)
+    }
+
     fun loadHomeContent() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 val featured = contentRepository.getFeaturedContent(tenantId)
-                val trending = contentRepository.getTrendingContent(tenantId)
+                val newReleases = contentRepository.getNewReleases(tenantId, 10)
+                val trending = contentRepository.getTrendingContent(tenantId, 10)
+                val hindi = contentRepository.getContentByLanguage(tenantId, "Hindi")
+                val english = contentRepository.getContentByLanguage(tenantId, "English")
+                val comedy = contentRepository.getContentByCategory(tenantId, "cat_comedy")
+                val action = contentRepository.getContentByCategory(tenantId, "cat_action")
+                val romance = contentRepository.getContentByCategory(tenantId, "cat_romance")
                 val popular = contentRepository.getPopularContent(tenantId)
-                val newReleases = contentRepository.getNewReleases(tenantId)
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     featured = featured,
+                    newReleases = newReleases,
                     trending = trending,
-                    popular = popular,
-                    newReleases = newReleases
+                    hindiContent = hindi,
+                    englishContent = english,
+                    comedyContent = comedy,
+                    actionContent = action,
+                    romanceContent = romance,
+                    popular = popular
                 )
             } catch (e: Exception) {
                 // If one fails, try to recover or just fail all for MVP

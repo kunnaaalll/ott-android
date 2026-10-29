@@ -21,6 +21,9 @@ interface ContentRepository {
     /** Get content by category. */
     suspend fun getContentByCategory(tenantId: String, categoryId: String): List<Content>
 
+    /** Get content by language (e.g. English, Hindi). */
+    suspend fun getContentByLanguage(tenantId: String, language: String): List<Content>
+
     /** Get featured content (for hero section). */
     suspend fun getFeaturedContent(tenantId: String): List<Content>
 

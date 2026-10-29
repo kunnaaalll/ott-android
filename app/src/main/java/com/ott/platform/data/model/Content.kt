@@ -55,6 +55,9 @@ data class Content(
 
     val status: String = ContentStatus.DRAFT.name,
 
+    @PropertyName("publishedAt")
+    val publishedAt: Timestamp? = null,
+
     @ServerTimestamp
     @PropertyName("createdAt")
     val createdAt: Timestamp? = null,
@@ -62,6 +65,17 @@ data class Content(
     @PropertyName("updatedAt")
     val updatedAt: Timestamp? = null,
 ) {
+    /**
+     * Effective publication time for deterministic newest-first sorting.
+     */
+    fun getEffectivePublishTime(): Long {
+        return publishedAt?.toDate()?.time
+            ?: createdAt?.toDate()?.time
+            ?: releaseDate?.toDate()?.time
+            ?: updatedAt?.toDate()?.time
+            ?: 0L
+    }
+
     /**
      * Returns formatted duration like "1h 42m"
      */

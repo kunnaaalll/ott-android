@@ -60,6 +60,51 @@ fun HomeScreen(
         list
     }
 
+    // Helper to filter content based on selected language
+    val filterByLang: (List<Content>) -> List<Content> = remember(uiState.selectedLanguage) {
+        { list ->
+            when (uiState.selectedLanguage) {
+                "Hindi" -> list.filter { it.language.equals("Hindi", ignoreCase = true) }
+                "English" -> list.filter { it.language.equals("English", ignoreCase = true) }
+                else -> list
+            }
+        }
+    }
+
+    val displayNewReleases = remember(uiState.newReleases, uiState.selectedLanguage) {
+        filterByLang(uiState.newReleases)
+    }
+    val displayTrending = remember(uiState.trending, uiState.selectedLanguage) {
+        filterByLang(uiState.trending)
+    }
+    val displayHindi = remember(uiState.hindiContent, uiState.selectedLanguage) {
+        if (uiState.selectedLanguage == "English") emptyList() else uiState.hindiContent
+    }
+    val displayEnglish = remember(uiState.englishContent, uiState.selectedLanguage) {
+        if (uiState.selectedLanguage == "Hindi") emptyList() else uiState.englishContent
+    }
+    val displayAction = remember(uiState.actionContent, uiState.selectedLanguage) {
+        filterByLang(uiState.actionContent)
+    }
+    val displayComedy = remember(uiState.comedyContent, uiState.selectedLanguage) {
+        filterByLang(uiState.comedyContent)
+    }
+    val displayRomance = remember(uiState.romanceContent, uiState.selectedLanguage) {
+        filterByLang(uiState.romanceContent)
+    }
+    val displayPopular = remember(uiState.popular, uiState.selectedLanguage) {
+        filterByLang(uiState.popular)
+    }
+
+    val hasAnyContent = displayNewReleases.isNotEmpty() ||
+        displayTrending.isNotEmpty() ||
+        displayHindi.isNotEmpty() ||
+        displayEnglish.isNotEmpty() ||
+        displayAction.isNotEmpty() ||
+        displayComedy.isNotEmpty() ||
+        displayRomance.isNotEmpty() ||
+        displayPopular.isNotEmpty()
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -75,37 +120,154 @@ fun HomeScreen(
             }
         }
 
-        // New Releases Section
-        if (uiState.newReleases.isNotEmpty()) {
+        // Language Filter Chips
+        item {
+            Spacer(modifier = Modifier.height(spacing.md))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.screenPadding),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val languages = listOf("ALL" to "All", "Hindi" to "Hindi", "English" to "English")
+                languages.forEach { (code, label) ->
+                    val isSelected = uiState.selectedLanguage.equals(code, ignoreCase = true)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { viewModel.setLanguage(code) },
+                        label = {
+                            Text(
+                                text = label,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.Black else OttTextPrimary
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = OttGold,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Color(0xFF1E293B),
+                            labelColor = OttTextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = if (isSelected) OttGold else Color(0xFF334155),
+                            borderWidth = 1.dp
+                        ),
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
+            }
+        }
+
+        if (!hasAnyContent) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp, horizontal = spacing.screenPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No content available for the selected filter.",
+                        color = OttTextSecondary,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+        }
+
+        // 1. New Releases Section (Latest 10 items, newest first)
+        if (displayNewReleases.isNotEmpty()) {
             item {
                 Spacer(modifier = Modifier.height(spacing.sectionGap))
                 ContentRow(
                     title = "New Releases",
-                    items = uiState.newReleases,
+                    items = displayNewReleases,
                     onItemClick = onNavigateToContent
                 )
             }
         }
 
-        // Trending Section
-        if (uiState.trending.isNotEmpty()) {
+        // 2. Trending Section
+        if (displayTrending.isNotEmpty()) {
             item {
                 Spacer(modifier = Modifier.height(spacing.sectionGap))
                 ContentRow(
                     title = "Trending Now",
-                    items = uiState.trending,
+                    items = displayTrending,
                     onItemClick = onNavigateToContent
                 )
             }
         }
 
-        // Popular Section
-        if (uiState.popular.isNotEmpty()) {
+        // 3. Hindi Cinema & Originals
+        if (displayHindi.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Hindi Cinema & Originals",
+                    items = displayHindi,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // 4. English Cinema & Series
+        if (displayEnglish.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "English Cinema & Series",
+                    items = displayEnglish,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // 5. Action Packed
+        if (displayAction.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Action Packed",
+                    items = displayAction,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // 6. Comedy Specials
+        if (displayComedy.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Comedy Specials",
+                    items = displayComedy,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // 7. Romance & Drama
+        if (displayRomance.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(spacing.sectionGap))
+                ContentRow(
+                    title = "Romance & Drama",
+                    items = displayRomance,
+                    onItemClick = onNavigateToContent
+                )
+            }
+        }
+
+        // 8. Popular Section
+        if (displayPopular.isNotEmpty() && uiState.selectedLanguage == "ALL") {
             item {
                 Spacer(modifier = Modifier.height(spacing.sectionGap))
                 ContentRow(
                     title = "Popular on Chumbak OTT",
-                    items = uiState.popular,
+                    items = displayPopular,
                     onItemClick = onNavigateToContent
                 )
             }
