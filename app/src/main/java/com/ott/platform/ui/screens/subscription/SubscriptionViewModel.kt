@@ -246,20 +246,9 @@ class SubscriptionViewModel @Inject constructor(
             when (val outcome = service.confirm(orderId, maxAttempts, delayMs)) {
                 is CheckoutConfirmation.Confirmed -> {
                     _subscriptionState.value = SubscriptionState.Active(outcome.subscription)
-                    val planId = outcome.subscription.planId
-                    val plan = _plans.value.firstOrNull { it.id == planId }
-                    val orderRef = outcome.subscription.providerSubscriptionId?.takeIf { it.isNotBlank() }
-                        ?: outcome.subscription.id.removePrefix("sub_")
-                    if (plan != null && orderRef.isNotBlank()) {
-                        // Meta purchase event is deduplicated by order id.
-                        metaAnalyticsTracker.logPurchase(
-                            orderId = orderRef,
-                            planId = plan.id,
-                            planName = plan.name,
-                            amount = plan.price,
-                            currency = "INR"
-                        )
-                    }
+                    // Authoritative purchase tracking is strictly handled by the backend Server
+                    // Conversions API (CAPI) upon Cashfree payment confirmation.
+                    // Client-side emission is disabled to prevent duplicate or phantom events.
                 }
                 CheckoutConfirmation.Pending -> {
                     _subscriptionState.value = SubscriptionState.ConfirmingTimeout

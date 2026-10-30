@@ -130,46 +130,10 @@ class MetaAnalyticsManager @Inject constructor(
             return false
         }
 
-        // Idempotency Gate: Prevent duplicate client purchase tracking
-        if (isPurchaseAlreadyLogged(cleanOrderId)) {
-            Log.i(TAG, "Purchase event for orderId=$cleanOrderId already logged. Skipping duplicate emission.")
-            return false
-        }
-
-        try {
-            ensureLogger()
-            val safeAmount = if (amount > 0) amount else 0.0
-            val targetCurrency = try {
-                Currency.getInstance(currency.uppercase())
-            } catch (_: Throwable) {
-                Currency.getInstance("INR")
-            }
-
-            val bundle = (extraParams ?: Bundle()).apply {
-                // Critical deduplication key matching Conversions API (CAPI) event_id
-                putString("event_id", cleanOrderId)
-                putString("order_id", cleanOrderId)
-                putString(AppEventsConstants.EVENT_PARAM_CURRENCY, targetCurrency.currencyCode)
-                putString(AppEventsConstants.EVENT_PARAM_CONTENT_TYPE, "subscription")
-                putString(AppEventsConstants.EVENT_PARAM_CONTENT_ID, planId)
-                putString("plan_name", planName)
-            }
-
-            // Standard Meta Mobile Purchase Event (fb_mobile_purchase)
-            logger?.logPurchase(
-                BigDecimal.valueOf(safeAmount),
-                targetCurrency,
-                bundle
-            )
-
-            // Record in idempotency cache
-            persistLoggedOrder(cleanOrderId)
-            Log.i(TAG, "Logged fb_mobile_purchase for orderId=$cleanOrderId, amount=$safeAmount ${targetCurrency.currencyCode}")
-            return true
-        } catch (t: Throwable) {
-            Log.w(TAG, "Failed to log purchase event for orderId=$cleanOrderId: ${t.message}")
-            return false
-        }
+        // Authoritative purchase tracking is strictly handled server-side via Meta Conversions API (CAPI)
+        // Client-side fb_mobile_purchase is disabled to prevent duplicate or unverified emissions from client devices.
+        Log.i(TAG, "Client purchase emission disabled: orderId=$cleanOrderId is handled by backend Conversions API.")
+        return true
     }
 
     override fun isPurchaseAlreadyLogged(orderId: String): Boolean {

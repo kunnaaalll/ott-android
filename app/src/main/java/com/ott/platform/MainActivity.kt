@@ -109,18 +109,10 @@ class MainActivity : ComponentActivity() {
             try {
                 val outcome = checkoutConfirmation.confirm(orderId, maxAttempts = 6, delayMs = 2000)
                 if (outcome is CheckoutConfirmation.Confirmed && orderId != null) {
-                    val sub = outcome.subscription
-                    val plan = com.ott.platform.data.model.PlanDefaults.getPlans(sub.tenantId)
-                        .firstOrNull { it.id == sub.planId }
-                    if (plan != null) {
-                        metaAnalyticsTracker.logPurchase(
-                            orderId = orderId,
-                            planId = plan.id,
-                            planName = plan.name,
-                            amount = plan.price,
-                            currency = "INR"
-                        )
-                    }
+                    // Authoritative purchase tracking is strictly handled by the backend Server
+                    // Conversions API (CAPI) upon Cashfree payment confirmation.
+                    // Client-side emission is disabled to prevent duplicate or phantom events.
+                    Log.i("MainActivity", "Subscription confirmed for order $orderId; tracking managed by backend CAPI.")
                 }
             } catch (e: Exception) {
                 Log.w("MainActivity", "Could not confirm checkout with backend: ${e.javaClass.simpleName}")

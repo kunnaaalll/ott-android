@@ -60,6 +60,10 @@
         <meta-data
             android:name="com.facebook.sdk.ClientToken"
             android:value="@string/facebook_client_token" />
+        <!-- Disable automatic event and purchase logging to prevent client-side phantom events -->
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="false" />
 
         <activity
             android:name=".MainActivity"
