@@ -1225,4 +1225,60 @@ class WebsiteApiClient @Inject constructor(
             }
         }
     }
+
+    /**
+     * Fetches the dynamic list of subscription plans from the backend (thechumbak.com/api/plans).
+     * Allows remote enabling/disabling of packages (such as ₹1 Test Pass) without app updates.
+     */
+    suspend fun fetchPlans(tenantId: String = "tenant_chumbak"): Result<List<com.ott.platform.data.model.Plan>> = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl/api/plans?tenantId=$tenantId")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty(APP_CLIENT_HEADER, APP_CLIENT_VALUE)
+                connectTimeout = 8000
+                readTimeout = 8000
+            }
+            val responseCode = conn.responseCode
+            val stream = if (responseCode in 200..299) conn.inputStream else conn.errorStream
+            val responseText = stream?.let { s -> BufferedReader(InputStreamReader(s, "UTF-8")).use { it.readText() } }.orEmpty()
+            if (responseCode !in 200..299 || responseText.isBlank()) {
+                return@withContext Result.failure(Exception("Failed to fetch plans: HTTP $responseCode"))
+            }
+
+            val json = JSONObject(responseText)
+            val plansArray = json.optJSONArray("plans") ?: JSONArray()
+            val resultList = mutableListOf<com.ott.platform.data.model.Plan>()
+
+            for (i in 0 until plansArray.length()) {
+                val obj = plansArray.getJSONObject(i)
+                val featuresJson = obj.optJSONArray("features") ?: JSONArray()
+                val featuresList = mutableListOf<String>()
+                for (j in 0 until featuresJson.length()) {
+                    featuresList.add(featuresJson.getString(j))
+                }
+
+                resultList.add(
+                    com.ott.platform.data.model.Plan(
+                        id = obj.optString("id"),
+                        tenantId = obj.optString("tenantId", tenantId),
+                        name = obj.optString("name"),
+                        description = obj.optString("description"),
+                        price = obj.optDouble("price", 0.0),
+                        currency = obj.optString("currency", "INR"),
+                        billingPeriod = obj.optString("billingPeriod", ""),
+                        active = obj.optBoolean("active", true),
+                        badge = obj.optString("badge", ""),
+                        durationDays = obj.optInt("durationDays", 30),
+                        featured = obj.optBoolean("featured", false),
+                        features = featuresList
+                    )
+                )
+            }
+            Result.success(resultList)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

@@ -167,8 +167,10 @@ class SubscriptionViewModel @Inject constructor(
                 val tenantId = user?.tenantId ?: "tenant_chumbak"
                 val loadedPlans = subscriptionRepository.getPlans(tenantId)
                 val rawPlans = if (loadedPlans.isNotEmpty()) loadedPlans else com.ott.platform.data.model.PlanDefaults.getPlans(tenantId)
-                _plans.value = rawPlans.filter { it.price > 1.0 }.sortedBy { it.price }
+                // Obey server-controlled plan availability without client-side price restrictions
+                _plans.value = rawPlans.sortedBy { it.price }
             } catch (e: Exception) {
+                // Safe offline fallback: standard production plans
                 _plans.value = com.ott.platform.data.model.PlanDefaults.getPlans("tenant_chumbak").filter { it.price > 1.0 }.sortedBy { it.price }
             }
         }

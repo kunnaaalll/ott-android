@@ -143,6 +143,13 @@ class SubscriptionRepositoryImpl @Inject constructor(
 
     override suspend fun getPlans(tenantId: String): List<Plan> {
         return try {
+            // 1. Authoritative dynamic plans from backend (remotely controllable without app updates)
+            val remotePlans = websiteApiClient?.fetchPlans(tenantId)
+            if (remotePlans != null && remotePlans.isSuccess && remotePlans.getOrNull()?.isNotEmpty() == true) {
+                return remotePlans.getOrNull()!!
+            }
+
+            // 2. Firestore fallback if backend is unreachable
             val snapshot = firestore.collection("plans")
                 .whereEqualTo("tenantId", tenantId)
                 .whereEqualTo("active", true)
